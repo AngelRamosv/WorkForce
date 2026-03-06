@@ -1,0 +1,18 @@
+{
+  "project": "Capacity WFM",
+  "phase": "FASE 1 - Implementación Spec 1.0",
+  "current_step": "MySQL Migration & Spec 1.0",
+  "open_questions": [],
+  "assumptions": [
+    "Meta Diaria: 3195 llamadas",
+    "AHT Operativo: 11.5 minutos",
+    "Jornada Efectiva: 8 horas",
+    "MySQL Server disponible en localhost"
+  ],
+  "decisions": [
+    "D15: Migración de SQLite a MySQL para mayor escalabilidad y concurrencia.",
+    "D16: Uso de variables de entorno para credenciales de DB.",
+    "D11-D14: (Mantenidas) Reglas de Spec 1.0 implementadas."
+  ],
+  "last_updated": "2026-02-19T21:45:00Z"
+}
