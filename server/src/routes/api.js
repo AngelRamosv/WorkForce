@@ -135,17 +135,31 @@ router.delete('/vacations/:id', async (req, res) => {
     res.json({ success: true });
 });
 
-// --- LIVE (PURE REAL DATA) ---
+// --- LIVE (DATA WITH RESET LOGIC) ---
 router.get('/live', async (req, res) => {
     try {
         const response = await axios.get('http://192.168.48.183:8050/data', { timeout: 3000 });
         const realData = response.data;
+        const config = await Config.findOne();
+
+        const offsetCalls = config?.offsetCalls || 0;
+        const offsetAbandoned = config?.offsetAbandoned || 0;
+
+        // Limpiar llamadas acumuladas si hay reset activo
+        if (realData.llamadas_ingresadas !== undefined) {
+          realData.llamadas_ingresadas = Math.max(0, realData.llamadas_ingresadas - offsetCalls);
+        }
+        if (realData.abandonadas_total !== undefined) {
+          realData.abandonadas_total = Math.max(0, realData.abandonadas_total - offsetAbandoned);
+        }
+        if (realData.contestadas_total !== undefined) {
+          realData.contestadas_total = Math.max(0, realData.contestadas_total - (offsetCalls - offsetAbandoned));
+        }
 
         if (realData.valores && Array.isArray(realData.valores)) {
             realData.tiempos_en_estado = realData.valores.map(v => `${Math.floor(v)}m`);
         }
 
-        // El cliente ya no recibe Mocks si esto falla
         res.json(realData);
     } catch (error) {
         console.error('CRITICAL: Central Offline', error.message);
@@ -153,6 +167,26 @@ router.get('/live', async (req, res) => {
             error: 'Central de Datos Inalcanzable',
             message: 'Asegúrese de estar conectado a la red local de la oficina.'
         });
+    }
+});
+
+// Endpoint para reiniciar el contador (Reset Manual)
+router.post('/live/reset', async (req, res) => {
+    try {
+        const response = await axios.get('http://192.168.48.183:8050/data', { timeout: 3000 });
+        const currentTotal = response.data.llamadas_ingresadas || 0;
+        const currentAbandoned = response.data.abandonadas_total || 0;
+
+        let config = await Config.findOne();
+        if (!config) {
+            config = await Config.create({ offsetCalls: currentTotal, offsetAbandoned: currentAbandoned });
+        } else {
+            await config.update({ offsetCalls: currentTotal, offsetAbandoned: currentAbandoned });
+        }
+
+        res.json({ success: true, message: 'Filtro de reseteo aplicado', offsetApplied: currentTotal });
+    } catch (error) {
+        res.status(500).json({ error: 'No se pudo leer la central para el reset' });
     }
 });
 
@@ -234,13 +268,30 @@ router.post('/reports/save-day', async (req, res) => {
         const { poolId, totalCalls, answeredCalls, abandonedCalls, serviceLevel, totalAgentsActive } = req.body;
         const today = new Date().toISOString().split('T')[0];
 
+        // 1. Guardar o actualizar la métrica diaria
         let existing = await DailyMetric.findOne({ where: { poolId, date: today } });
         if (existing) {
             await existing.update({ totalCalls, answeredCalls, abandonedCalls, serviceLevel, totalAgentsActive });
         } else {
             await DailyMetric.create({ poolId, date: today, totalCalls, answeredCalls, abandonedCalls, serviceLevel, totalAgentsActive });
         }
-        res.json({ success: true, message: 'Día cerrado y guardado exitosamente' });
+
+        // 2. REINICIO AUTOMÁTICO PARA MAÑANA: 
+        // Capturamos el total actual de la central para que mañana el "nuevo día" empiece en 0.
+        try {
+            const centralRes = await axios.get('http://192.168.48.183:8050/data', { timeout: 3000 });
+            const currentTotal = centralRes.data.llamadas_ingresadas || 0;
+            const currentAbandoned = centralRes.data.abandonadas_total || 0;
+
+            let config = await Config.findOne();
+            if (config) {
+                await config.update({ offsetCalls: currentTotal, offsetAbandoned: currentAbandoned });
+            }
+        } catch (centralError) {
+            console.warn('Reinicio automático falló: No se pudo contactar a la central', centralError.message);
+        }
+
+        res.json({ success: true, message: 'Día cerrado y guardado exitosamente. Los contadores se reiniciarán para mañana.' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

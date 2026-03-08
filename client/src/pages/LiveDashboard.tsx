@@ -12,6 +12,7 @@ const LiveDashboard: React.FC = () => {
     // Filtros
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
+    const [config, setConfig] = useState<any>(null);
 
     const navigate = useNavigate();
     const [isSaving, setIsSaving] = useState(false);
@@ -59,6 +60,10 @@ const LiveDashboard: React.FC = () => {
                     setError(null);
                     setLastUpdate(new Date());
                 }
+                
+                // Cargar configuración para tener metas reales
+                const confRes = await api.get('/config');
+                setConfig(confRes.data);
             } catch (err: any) {
                 if (isMounted) {
                     console.error('Error fetching live data', err);
@@ -104,7 +109,8 @@ const LiveDashboard: React.FC = () => {
 
     if (!data) return <div className="p-10 text-center text-gray-500 font-mono text-xs">Awaiting data stream...</div>;
 
-    const metasLlamadas = 3195;
+    const metasLlamadas = config?.dailyGoal || 3195;
+    const ahtReference = config?.ahtMinutes || 11.5;
 
     // ==========================================
     // LÓGICA DE CUMPLIMIENTO AL CORTE (PACING)
@@ -120,19 +126,24 @@ const LiveDashboard: React.FC = () => {
     // Calcular cuántos minutos han pasado desde las 9:00 AM
     let elapsedMinutes = ((currentHour - startHour) * 60) + currentMinutes;
 
-    // Límite de seguridad: Que no se pase del total (100%) o baje de cero
-    if (elapsedMinutes > totalOperatingMinutes) elapsedMinutes = totalOperatingMinutes;
-    if (elapsedMinutes < 0) elapsedMinutes = 0; // Antes de las 9:00 AM = 0
-
-    // ¿Qué porcentaje del día ya transcurrió? (Ej: 3:00 PM = 50%)
-    const percentOfDayPassed = elapsedMinutes / totalOperatingMinutes;
-
-    // ¿Cuántas llamadas *deberíamos* llevar a esta hora exacta?
-    const metaAlCorte = Math.round(metasLlamadas * percentOfDayPassed) || 1; // || 1 evita división por cero temprano en la mañana
-
-    // ¿Cómo vamos contra la meta al corte?
+    // Lógica de visualización:
+    let percentOfDayPassed = 0;
+    let metaAlCorte = 0;
+    let porcentajeCumplimientoCorte = 0;
     const llamadasReales = data.llamadas_ingresadas || 0;
-    const porcentajeCumplimientoCorte = Math.round((llamadasReales / metaAlCorte) * 100);
+
+    if (elapsedMinutes > 0) {
+        if (elapsedMinutes > totalOperatingMinutes) elapsedMinutes = totalOperatingMinutes;
+        
+        percentOfDayPassed = elapsedMinutes / totalOperatingMinutes;
+        metaAlCorte = Math.round(metasLlamadas * percentOfDayPassed);
+        
+        // Si la meta es 0 (muy temprano), evitamos división por cero
+        porcentajeCumplimientoCorte = metaAlCorte > 0 
+            ? Math.round((llamadasReales / metaAlCorte) * 100) 
+            : 0;
+    }
+    // Si es antes de las 9 AM, se queda todo en 0.
 
     // ==========================================
 
@@ -144,7 +155,6 @@ const LiveDashboard: React.FC = () => {
         time: (data.tiempos_en_estado || [])[idx] || '0m'
     }));
 
-    const ahtReference = 11.5; // Referencia Spec 1.0 (o de config)
     const tardyAgents = allAgents
         .filter((a: any) => ['Break', 'Baño', 'Personal', 'Coaching', 'Comida', 'Capacitación', 'No Disponible', 'Consultorio', 'RetroSup', 'esperando info'].includes(a.status))
         .map((a: any) => {
@@ -181,14 +191,16 @@ const LiveDashboard: React.FC = () => {
                             ⚠️ Modo Demo Activo
                         </span>
                     )}
-                    <button
-                        onClick={handleCloseDay}
-                        disabled={isSaving}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm transition active:scale-95 disabled:opacity-50"
-                    >
-                        <Save size={16} />
-                        {isSaving ? 'Guardando...' : 'Cerrar Día y Guardar'}
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleCloseDay}
+                            disabled={isSaving}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm transition active:scale-95 disabled:opacity-50"
+                        >
+                            <Save size={16} />
+                            {isSaving ? 'Guardando...' : 'Cerrar Día'}
+                        </button>
+                    </div>
                     <p className="text-xs font-mono font-medium text-gray-400 mt-1">Actualizado: {lastUpdate.toLocaleTimeString()}</p>
                 </div>
             </div>

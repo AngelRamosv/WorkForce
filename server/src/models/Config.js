@@ -33,6 +33,14 @@ const Config = sequelize.define('Config', {
     dailyGoal: {
         type: DataTypes.INTEGER,
         defaultValue: 3195
+    },
+    offsetCalls: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
+    offsetAbandoned: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
     }
 });
 
