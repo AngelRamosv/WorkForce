@@ -66,31 +66,50 @@ router.post('/staff/sync', async (req, res) => {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const data = xlsx.utils.sheet_to_json(sheet);
 
-        // Lógica de clasificación: 'Móvil' vs 'Retención'
+        // Lógica de clasificación: 'Móvil' vs 'Retención' + conteo de Nocturnos
         let movilCount = 0;
         let retencionCount = 0;
+        let retencionNocturno = 0;
+        let movilNocturno = 0;
 
         data.forEach(row => {
             const rowStr = JSON.stringify(row).toLowerCase();
-            if (rowStr.includes('movil') || rowStr.includes('móvil')) {
+            const isMovil = rowStr.includes('movil') || rowStr.includes('móvil');
+            
+            // Detectar turno nocturno en la columna "Turno"
+            const turno = (row['Turno'] || row['turno'] || row['TURNO'] || '').toString().toLowerCase();
+            const isNocturno = turno.includes('nocturno');
+            
+            if (isMovil) {
                 movilCount++;
+                if (isNocturno) movilNocturno++;
             } else {
                 retencionCount++;
+                if (isNocturno) retencionNocturno++;
             }
         });
 
-        // Actualizar pools en DB
+        // Actualizar pools en DB (incluyendo cantidad de nocturnos)
         const pools = await Pool.findAll();
         for (const pool of pools) {
             if (pool.name.toLowerCase().includes('retencion') || pool.name.toLowerCase().includes('retención')) {
                 pool.totalAgents = retencionCount;
+                pool.nocturnalAgents = retencionNocturno;
             } else if (pool.name.toLowerCase().includes('movil') || pool.name.toLowerCase().includes('móvil')) {
                 pool.totalAgents = movilCount;
+                pool.nocturnalAgents = movilNocturno;
             }
             await pool.save();
         }
 
-        res.json({ success: true, retencionCount, movilCount, fileName: fileName || 'Staff_Upload.xlsx' });
+        res.json({ 
+            success: true, 
+            retencionCount, 
+            movilCount, 
+            retencionNocturno,
+            movilNocturno,
+            fileName: fileName || 'Staff_Upload.xlsx' 
+        });
     } catch (error) {
         res.status(500).json({ error: 'Error al procesar staff: ' + error.message });
     }

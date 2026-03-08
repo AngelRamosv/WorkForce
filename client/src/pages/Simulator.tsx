@@ -142,9 +142,18 @@ const Simulator: React.FC = () => {
             const rest = restDaysMap[day];
             let planned = totalAgents - rest;
 
-            // 2. Turno Nocturno Congelado (se lee del estado actual)
-            let nocturno = distribution[day]?.nocturno || 0;
-            if (nocturno > planned) nocturno = planned; // Evita descuadre si hay más nocturnos que planeados
+            // 2. Turno Nocturno Congelado
+            // Prioridad: Leer del Excel cargado (pool.nocturnalAgents), o del valor manual si el Director ya lo escribió
+            const noctFromExcel = pool.nocturnalAgents || 0;
+            const noctFromTable = distribution[day]?.nocturno || 0;
+            let nocturno = Math.max(noctFromExcel, noctFromTable); // Respetar el mayor
+            
+            // Fines de semana: NO hay turno nocturno (solo Matutino)
+            if (day === 'Saturday' || day === 'Sunday') {
+                nocturno = 0;
+            }
+            
+            if (nocturno > planned) nocturno = planned; // Evita descuadre
 
             const remainingToPlan = planned - nocturno;
             let matutino = 0;

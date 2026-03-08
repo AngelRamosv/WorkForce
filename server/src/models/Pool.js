@@ -23,6 +23,10 @@ const Pool = sequelize.define('Pool', {
         type: DataTypes.JSON,
         defaultValue: ['A', 'B', 'C']
     },
+    nocturnalAgents: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
     isActive: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
