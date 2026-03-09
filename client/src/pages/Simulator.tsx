@@ -44,11 +44,39 @@ const Simulator: React.FC = () => {
         }
     };
 
+    // 1. Efecto para recalcular el balance cada vez que cambia la distribución (Suma Cero)
     useEffect(() => {
-        if (selectedPoolId) {
+        if (selectedPoolId && Object.values(distribution).some(d => d.planned > 0)) {
             simulate();
         }
     }, [distribution, selectedPoolId]);
+
+    // 2. Efecto para PRE-CARGAR nocturnos y resetear tabla al cambiar de Pool
+    useEffect(() => {
+        if (selectedPoolId) {
+            const pool = pools.find(p => p.id === selectedPoolId);
+            if (pool) {
+                const noctCount = pool.nocturnalAgents || 0;
+                setDistribution(prev => {
+                    const next = { ...prev };
+                    DAYS.forEach(day => {
+                        const isWeekend = day === 'Saturday' || day === 'Sunday';
+                        const n = isWeekend ? 0 : noctCount;
+                        // Mantenemos lo que ya esté si es mayor que 0, o ponemos el del pool
+                        const currentNoct = prev[day]?.nocturno || 0;
+                        const finalNoct = Math.max(n, currentNoct);
+                        
+                        next[day] = { 
+                            ...prev[day], 
+                            nocturno: n,
+                            planned: (prev[day]?.matutino || 0) + (prev[day]?.vespertino || 0) + n
+                        };
+                    });
+                    return next;
+                });
+            }
+        }
+    }, [selectedPoolId, pools.length]); // Solo cuando cambia el ID del pool o se cargan pools nuevos
 
     const simulate = async () => {
         const pool = pools.find(p => p.id === selectedPoolId);
@@ -143,28 +171,21 @@ const Simulator: React.FC = () => {
             let planned = totalAgents - rest;
 
             // 2. Turno Nocturno Congelado
-            // Prioridad: Leer del Excel cargado (pool.nocturnalAgents), o del valor manual si el Director ya lo escribió
             const noctFromExcel = pool.nocturnalAgents || 0;
-            const noctFromTable = distribution[day]?.nocturno || 0;
-            let nocturno = Math.max(noctFromExcel, noctFromTable); // Respetar el mayor
+            let nocturno = (day === 'Saturday' || day === 'Sunday') ? 0 : noctFromExcel;
             
-            // Fines de semana: NO hay turno nocturno (solo Matutino)
-            if (day === 'Saturday' || day === 'Sunday') {
-                nocturno = 0;
-            }
-            
-            if (nocturno > planned) nocturno = planned; // Evita descuadre
+            if (nocturno > planned) nocturno = planned; 
 
             const remainingToPlan = planned - nocturno;
             let matutino = 0;
             let vespertino = 0;
 
-            // 3. Fines de semana: Solo Matutino (9 a 6)
+            // 3. Fines de semana: Solo Matutino
             if (day === 'Saturday' || day === 'Sunday') {
                 matutino = remainingToPlan;
                 vespertino = 0;
             } else {
-                // Lunes a Viernes: dividir el restante 50/50 entre Matutino y Vespertino
+                // Lunes a Viernes: 50/50
                 matutino = Math.round(remainingToPlan * 0.50);
                 vespertino = remainingToPlan - matutino;
             }

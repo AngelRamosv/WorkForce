@@ -20,10 +20,13 @@ router.get('/pools', async (req, res) => {
 
 router.put('/pools/:id', async (req, res) => {
     try {
-        const { totalAgents } = req.body;
+        const { totalAgents, nocturnalAgents } = req.body;
         const pool = await Pool.findByPk(req.params.id);
         if (!pool) return res.status(404).json({ error: 'Pool not found' });
-        pool.totalAgents = totalAgents;
+        
+        if (totalAgents !== undefined) pool.totalAgents = totalAgents;
+        if (nocturnalAgents !== undefined) pool.nocturnalAgents = nocturnalAgents;
+        
         await pool.save();
         res.json(pool);
     } catch (error) {
@@ -38,12 +41,12 @@ router.get('/config', async (req, res) => {
 
 router.put('/config', async (req, res) => {
     try {
-        const { shrinkage, occupancy, ahtMinutes, shiftHours } = req.body;
+        const { shrinkage, occupancy, ahtMinutes, shiftHours, dailyGoal } = req.body;
         let config = await Config.findOne();
         if (!config) {
-            config = await Config.create({ shrinkage, occupancy, ahtMinutes, shiftHours });
+            config = await Config.create({ shrinkage, occupancy, ahtMinutes, shiftHours, dailyGoal });
         } else {
-            await config.update({ shrinkage, occupancy, ahtMinutes, shiftHours });
+            await config.update({ shrinkage, occupancy, ahtMinutes, shiftHours, dailyGoal });
         }
         res.json(config);
     } catch (error) {
@@ -73,12 +76,31 @@ router.post('/staff/sync', async (req, res) => {
         let movilNocturno = 0;
 
         data.forEach(row => {
-            const rowStr = JSON.stringify(row).toLowerCase();
+            const rowValues = Object.values(row).map(v => (v || '').toString().toLowerCase());
+            const rowStr = rowValues.join(' ');
+            
+            // Clasificación: ¿Es Móvil?
             const isMovil = rowStr.includes('movil') || rowStr.includes('móvil');
             
-            // Detectar turno nocturno en la columna "Turno"
-            const turno = (row['Turno'] || row['turno'] || row['TURNO'] || '').toString().toLowerCase();
-            const isNocturno = turno.includes('nocturno');
+            // Detección de Turno Nocturno (Más Flexible)
+            // Buscamos en columnas específicas primero
+            let turnoLabel = '';
+            const possibleColumns = ['turno', 'horario', 'jornada', 'shift', 'modality'];
+            
+            const actualColumn = Object.keys(row).find(key => 
+                possibleColumns.some(pc => key.toLowerCase().includes(pc))
+            );
+            
+            let isNocturno = false;
+            const nocturnalKeywords = ['nocturno', 'night', '2:00', '2 am', 'noc', 't3', '23:', '00:', '22:'];
+            
+            if (actualColumn) {
+                const val = row[actualColumn].toString().toLowerCase();
+                isNocturno = nocturnalKeywords.some(kw => val.includes(kw));
+            } else {
+                // Si no hay columna clara, buscamos la palabra en toda la fila
+                isNocturno = nocturnalKeywords.some(kw => rowStr.includes(kw));
+            }
             
             if (isMovil) {
                 movilCount++;
