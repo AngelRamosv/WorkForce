@@ -41,6 +41,10 @@ const Config = sequelize.define('Config', {
     offsetAbandoned: {
         type: DataTypes.INTEGER,
         defaultValue: 0
+    },
+    lateToleranceMinutes: {
+        type: DataTypes.INTEGER,
+        defaultValue: 5
     }
 });
 

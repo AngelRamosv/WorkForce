@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api/client';
-import { BarChart3, Download, CalendarCheck, Users, Activity, PhoneCall } from 'lucide-react';
+import { BarChart3, Download, CalendarCheck, Users, Activity, PhoneCall, Trash2 } from 'lucide-react';
 
 const Reports: React.FC = () => {
     const [reports, setReports] = useState<any[]>([]);
@@ -18,6 +18,16 @@ const Reports: React.FC = () => {
             console.error('Error fetching reports', error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleDelete = async (id: string, date: string) => {
+        if (!window.confirm(`¿Estás seguro de que deseas eliminar el reporte del día ${date}? Esta acción no se puede deshacer.`)) return;
+        try {
+            await api.delete(`/reports/${id}`);
+            fetchReports();
+        } catch (error) {
+            alert('No se pudo eliminar el reporte');
         }
     };
 
@@ -93,6 +103,9 @@ const Reports: React.FC = () => {
                                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">
                                     <div className="flex items-center justify-center gap-2"><PhoneCall size={12} /> Tráfico</div>
                                 </th>
+                                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">
+                                    Acciones
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -138,6 +151,15 @@ const Reports: React.FC = () => {
                                             <p><span className="text-gray-400 font-medium">Abandonos:</span> <span className="font-bold text-rose-600">{report.abandonedCalls}</span></p>
                                             <p><span className="text-gray-400 font-medium">NS:</span> <span className="font-bold text-indigo-600">{report.serviceLevel}%</span></p>
                                         </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button
+                                            onClick={() => handleDelete(report.id, report.date)}
+                                            className="p-2 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all group-hover:scale-110"
+                                            title="Eliminar reporte de este día"
+                                        >
+                                            <Trash2 size={18} />
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

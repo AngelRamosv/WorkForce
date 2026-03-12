@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Settings, Calculator, History, BarChart3, Palmtree } from 'lucide-react';
+import { LayoutDashboard, Settings, Calculator, History, BarChart3, Palmtree, Clock } from 'lucide-react';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const location = useLocation();
@@ -43,6 +43,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                             <Link to="/simulator" className={isActive('/simulator') ? activeClass : normalClass}>
                                 <Calculator className="w-4 h-4 mr-2" />
                                 Simulador
+                            </Link>
+                            <Link to="/attendance" className={isActive('/attendance') ? activeClass : normalClass}>
+                                <Clock className="w-4 h-4 mr-2" />
+                                Asistencia
                             </Link>
                             <Link to="/reports" className={isActive('/reports') ? activeClass : normalClass}>
                                 <BarChart3 className="w-4 h-4 mr-2" />

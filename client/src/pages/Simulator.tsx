@@ -17,6 +17,7 @@ const Simulator: React.FC = () => {
     const [pools, setPools] = useState<any[]>([]);
     const [selectedPoolId, setSelectedPoolId] = useState('');
     const [vacations, setVacations] = useState<any[]>([]);
+    const [lastPreloadPoolId, setLastPreloadPoolId] = useState<string | null>(null);
     const [distribution, setDistribution] = useState<Record<string, DayData>>(
         DAYS.reduce((acc, day) => ({ ...acc, [day]: { matutino: 0, vespertino: 0, nocturno: 0, planned: 0, rest: 0, vacation: 0 } }), {})
     );
@@ -38,7 +39,11 @@ const Simulator: React.FC = () => {
             setPools(poolsRes.data);
             setConfig(configRes.data);
             setVacations(vacRes.data);
-            if (poolsRes.data.length > 0) setSelectedPoolId(poolsRes.data[0].id);
+            
+            if (poolsRes.data.length > 0) {
+                const retPool = poolsRes.data.find((p: any) => p.name.toLowerCase().includes('retencion') || p.name.toLowerCase().includes('retención'));
+                setSelectedPoolId(retPool ? retPool.id : poolsRes.data[0].id);
+            }
         } catch (error) {
             console.error('Error fetching data', error);
         }
@@ -51,9 +56,9 @@ const Simulator: React.FC = () => {
         }
     }, [distribution, selectedPoolId]);
 
-    // 2. Efecto para PRE-CARGAR nocturnos y resetear tabla al cambiar de Pool
+    // 2. Efecto para PRE-CARGAR nocturnos solo una vez al cambiar de Pool
     useEffect(() => {
-        if (selectedPoolId) {
+        if (selectedPoolId && selectedPoolId !== lastPreloadPoolId) {
             const pool = pools.find(p => p.id === selectedPoolId);
             if (pool) {
                 const noctCount = pool.nocturnalAgents || 0;
@@ -62,21 +67,21 @@ const Simulator: React.FC = () => {
                     DAYS.forEach(day => {
                         const isWeekend = day === 'Saturday' || day === 'Sunday';
                         const n = isWeekend ? 0 : noctCount;
-                        // Mantenemos lo que ya esté si es mayor que 0, o ponemos el del pool
-                        const currentNoct = prev[day]?.nocturno || 0;
-                        const finalNoct = Math.max(n, currentNoct);
-                        
                         next[day] = { 
                             ...prev[day], 
                             nocturno: n,
-                            planned: (prev[day]?.matutino || 0) + (prev[day]?.vespertino || 0) + n
+                            planned: n,
+                            matutino: 0,
+                            vespertino: 0,
+                            rest: 0
                         };
                     });
                     return next;
                 });
+                setLastPreloadPoolId(selectedPoolId);
             }
         }
-    }, [selectedPoolId, pools.length]); // Solo cuando cambia el ID del pool o se cargan pools nuevos
+    }, [selectedPoolId, pools.length, lastPreloadPoolId]);
 
     const simulate = async () => {
         const pool = pools.find(p => p.id === selectedPoolId);
@@ -215,6 +220,19 @@ const Simulator: React.FC = () => {
                 </div>
 
                 <div className="flex gap-3">
+                    <button
+                        onClick={() => {
+                            const emptyDist = DAYS.reduce((acc, day) => ({
+                                ...acc,
+                                [day]: { matutino: 0, vespertino: 0, nocturno: 0, planned: 0, rest: 0, vacation: 0 }
+                            }), {});
+                            setDistribution(emptyDist);
+                        }}
+                        className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg font-bold hover:bg-gray-50 transition active:scale-95"
+                    >
+                        Reiniciar Plan
+                    </button>
+
                     <button
                         onClick={handleAutoPlan}
                         className="flex items-center gap-2 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-lg font-bold hover:bg-amber-100 transition active:scale-95"

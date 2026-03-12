@@ -7,6 +7,7 @@ import Audit from './pages/Audit';
 import Reports from './pages/Reports';
 import LiveDashboard from './pages/LiveDashboard';
 import Vacations from './pages/Vacations';
+import AttendanceReport from './pages/AttendanceReport';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
           <Route path="/simulator" element={<Simulator />} />
           <Route path="/audit" element={<Audit />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/attendance" element={<AttendanceReport />} />
         </Routes>
       </Layout>
     </Router>

@@ -20,7 +20,7 @@ const Vacation = sequelize.define('Vacation', {
         allowNull: false
     },
     poolId: {
-        type: DataTypes.INTEGER,
+        type: DataTypes.UUID,
         allowNull: false
     }
 });

@@ -26,9 +26,11 @@ const WeeklyPlan = require('./models/WeeklyPlan');
 const AuditLog = require('./models/AuditLog');
 const Vacation = require('./models/Vacation');
 const DailyMetric = require('./models/DailyMetric');
+const Attendance = require('./models/Attendance');
+const Agent = require('./models/Agent');
 
-sequelize.sync({ force: false }).then(async () => {
-    console.log('Database synced (Persistent Mode)');
+sequelize.sync({ alter: true }).then(async () => {
+    console.log('Database synced (Alter Mode - Tables updated)');
 
     // Solo sembrar datos si la tabla está vacía
     const count = await Pool.count();

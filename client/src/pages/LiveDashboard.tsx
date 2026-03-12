@@ -16,6 +16,7 @@ const LiveDashboard: React.FC = () => {
 
     const navigate = useNavigate();
     const [isSaving, setIsSaving] = useState(false);
+    const [pools, setPools] = useState<any[]>([]);
 
     const handleCloseDay = async () => {
         if (!data) return;
@@ -32,8 +33,20 @@ const LiveDashboard: React.FC = () => {
             const answeredCalls = data.contestadas_total || (totalCalls - abandonedCalls);
             const serviceLevel = 100 - realPct;
 
+            // Buscar prioritariamente el pool de Retención
+            const retPool = pools.find(p => p.name.toLowerCase().includes('retencion') || p.name.toLowerCase().includes('retención'));
+            // Respaldo: el primero que encuentre de la lista real
+            const poolId = retPool ? retPool.id : (pools.length > 0 ? pools[0].id : null);
+            
+            if (!poolId) {
+                alert('No se ha detectado ninguna campaña activa (Retención/Móvil). Por favor, refresca la página o revisa la configuración.');
+                return;
+            }
+
+            console.log('Intentando guardar reporte para el Pool ID:', poolId);
+
             await api.post('/reports/save-day', {
-                poolId: 1, // Default to 1 (Retención) for now
+                poolId,
                 totalCalls,
                 answeredCalls,
                 abandonedCalls,
@@ -42,9 +55,10 @@ const LiveDashboard: React.FC = () => {
             });
             alert('Día cerrado exitosamente. Resultados enviados al Dashboard de Cumplimiento.');
             navigate('/reports');
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            alert('Error al guardar el reporte del día');
+            const msg = error.response?.data?.error || 'Error desconocido al guardar';
+            alert(`Error al guardar el reporte del día: ${msg}`);
         } finally {
             setIsSaving(false);
         }
@@ -61,6 +75,10 @@ const LiveDashboard: React.FC = () => {
                     setLastUpdate(new Date());
                 }
                 
+                // Cargar pools para tener el ID correcto
+                const poolsRes = await api.get('/pools');
+                setPools(poolsRes.data);
+
                 // Cargar configuración para tener metas reales
                 const confRes = await api.get('/config');
                 setConfig(confRes.data);
@@ -161,7 +179,7 @@ const LiveDashboard: React.FC = () => {
             const minutes = parseInt(a.time.replace(/\D/g, '')) || 0;
             return { ...a, minutes };
         })
-        .filter((a: any) => a.minutes > 15) // Umbral de alarma: más de 15 minutos en auxiliares
+        .filter((a: any) => a.minutes > (config?.lateToleranceMinutes || 5)) // Umbral dinámico: 5 minutos
         .sort((a: any, b: any) => b.minutes - a.minutes);
 
     const totalFugaMinutes = tardyAgents.reduce((sum: number, a: any) => sum + a.minutes, 0);
