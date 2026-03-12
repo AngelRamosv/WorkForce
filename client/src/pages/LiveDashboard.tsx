@@ -380,40 +380,50 @@ const LiveDashboard: React.FC = () => {
                         <div className="relative z-10">
                             <div className="flex items-center gap-2 mb-4">
                                 <Clock className="text-amber-500" size={18} />
-                                <h4 className="font-bold text-gray-800 text-sm">Retardos</h4>
+                                <h4 className="font-bold text-gray-800 text-sm">Monitor de Puntualidad</h4>
                             </div>
-                            <div className="flex justify-between items-end mb-4">
-                                <div>
-                                    <p className="text-3xl font-black text-amber-500 flex items-baseline gap-1">
-                                        {totalFugaMinutes} <span className="text-sm font-bold text-gray-400">min</span>
-                                    </p>
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">Tiempo Perdido Hoy</p>
+                            
+                            <div className="grid grid-cols-2 gap-4 mb-6">
+                                <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                                    <p className="text-[9px] text-gray-400 font-black uppercase mb-1">Retardo Entrada (Login)</p>
+                                    <p className="text-2xl font-black text-rose-500">{data.puntualidad?.totalLoginDelay || 0}m</p>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-xl font-black text-rose-500 flex items-baseline gap-1 justify-end">
-                                        {impactoLlamadas} <span className="text-xs text-gray-400 block max-w-[50px] leading-tight text-right">LLAM PERDIDAS</span>
-                                    </p>
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">Impacto (AHT 11.5m)</p>
+                                <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                                    <p className="text-[9px] text-gray-400 font-black uppercase mb-1">Tiempo en Aux (Fuga)</p>
+                                    <p className="text-2xl font-black text-amber-500">{totalFugaMinutes}m</p>
                                 </div>
                             </div>
+
                             <div className="pt-4 border-t border-gray-100">
                                 <p className="text-[10px] text-gray-400 font-bold uppercase mb-3 flex justify-between">
-                                    <span>Top Infractores (Vivo)</span>
+                                    <span>Infractores de Hoy (Puntualidad)</span>
+                                    <span className="text-rose-500">{(data.puntualidad?.tardyEntrants || []).length} detectados</span>
+                                </p>
+                                <div className="space-y-2 max-h-[100px] overflow-y-auto pr-2 custom-scrollbar mb-4">
+                                    {(data.puntualidad?.tardyEntrants || []).length === 0 ? (
+                                        <p className="text-[10px] text-gray-400 italic">Sin retardos de entrada hoy.</p>
+                                    ) : (
+                                        (data.puntualidad?.tardyEntrants || []).map((agent: any, i: number) => (
+                                            <div key={i} className="flex justify-between items-center text-[11px] bg-rose-50/50 p-1.5 rounded-lg border border-rose-100/50">
+                                                <span className="font-bold text-gray-700 truncate max-w-[150px]">{agent.name}</span>
+                                                <span className="text-rose-600 font-black">+{agent.delay}m</span>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                <p className="text-[10px] text-gray-400 font-bold uppercase mb-3 flex justify-between pt-2 border-t border-gray-50">
+                                    <span>Exceso en Aux (Vivo)</span>
                                     <span className="text-amber-500">{tardyAgents.length} detectados</span>
                                 </p>
-                                <div className="space-y-3 max-h-[120px] overflow-y-auto pr-2 custom-scrollbar">
+                                <div className="space-y-2 max-h-[100px] overflow-y-auto pr-2 custom-scrollbar">
                                     {tardyAgents.length === 0 ? (
-                                        <p className="text-xs text-gray-400 italic">No hay retardos detectados.</p>
+                                        <p className="text-[10px] text-gray-400 italic">Todos en regla actualmente.</p>
                                     ) : (
                                         tardyAgents.map((agent: any, i: number) => (
-                                            <div key={i} className="flex justify-between items-center text-xs">
-                                                <span className="font-semibold text-gray-700 truncate max-w-[130px]">{agent.name}</span>
-                                                <div className="flex items-center gap-1">
-                                                    <span className="text-amber-600 font-mono font-bold bg-amber-50 px-1.5 py-0.5 rounded">+{agent.minutes}m</span>
-                                                    <span className="text-rose-500 font-mono font-bold text-[10px] bg-rose-50 px-1.5 py-0.5 rounded">
-                                                        -{Math.round(agent.minutes / ahtReference)} LLAM
-                                                    </span>
-                                                </div>
+                                            <div key={i} className="flex justify-between items-center text-[11px] bg-amber-50/50 p-1.5 rounded-lg border border-amber-100/50">
+                                                <span className="font-bold text-gray-700 truncate max-w-[150px]">{agent.name}</span>
+                                                <span className="text-amber-600 font-black">+{agent.minutes}m</span>
                                             </div>
                                         ))
                                     )}

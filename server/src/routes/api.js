@@ -246,6 +246,20 @@ router.get('/live', async (req, res) => {
                 }
             }
         }
+        // --- ENRIQUECER CON TOTALES DE PUNTUALIDAD REAL ---
+        const todayAttendance = await Attendance.findAll({
+            where: { date: today, status: 'Late' }
+        });
+
+        const totalLoginDelay = todayAttendance.reduce((sum, a) => sum + a.delayMinutes, 0);
+        
+        realData.puntualidad = {
+            totalLoginDelay,
+            tardyEntrants: todayAttendance.map(a => ({
+                name: a.agentName,
+                delay: a.delayMinutes
+            }))
+        };
 
         res.json(realData);
     } catch (error) {
