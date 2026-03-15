@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api/client';
-import { Clock, Filter, UserCheck, AlertCircle } from 'lucide-react';
+import { Clock, Filter, UserCheck, AlertCircle, Download, Trash2, ShieldAlert } from 'lucide-react';
 
 const AttendanceReport: React.FC = () => {
     const [attendance, setAttendance] = useState<any[]>([]);
@@ -43,6 +43,53 @@ const AttendanceReport: React.FC = () => {
         }
     };
 
+    const handleExport = async () => {
+        try {
+            const params = new URLSearchParams();
+            if (filters.startDate) params.append('startDate', filters.startDate);
+            if (filters.endDate) params.append('endDate', filters.endDate);
+            if (filters.poolId) params.append('poolId', filters.poolId);
+            
+            // Usar window.open para descargar el archivo directamente desde el endpoint
+            const url = `${api.defaults.baseURL}/reports/attendance/export?${params.toString()}`;
+            window.open(url, '_blank');
+        } catch (error) {
+            console.error('Error exporting report', error);
+            alert('Error al exportar el reporte');
+        }
+    };
+
+    const handleDeleteRecord = async (id: string, name: string) => {
+        if (!window.confirm(`¿Estás seguro de eliminar el registro de ${name}?`)) return;
+        
+        try {
+            await api.delete(`/reports/attendance/${id}`);
+            setAttendance(prev => prev.filter(a => a.id !== id));
+        } catch (error) {
+            console.error('Error deleting record', error);
+            alert('No se pudo eliminar el registro');
+        }
+    };
+
+    const handleClearPeriod = async () => {
+        const msg = `¡ATENCIÓN! Se eliminarán TODOS los registros del periodo ${filters.startDate} al ${filters.endDate}. ¿Deseas continuar?`;
+        if (!window.confirm(msg)) return;
+
+        try {
+            const params = new URLSearchParams();
+            params.append('startDate', filters.startDate);
+            params.append('endDate', filters.endDate);
+            if (filters.poolId) params.append('poolId', filters.poolId);
+
+            await api.delete(`/reports/attendance?${params.toString()}`);
+            fetchReport();
+            alert('Periodo limpiado correctamente');
+        } catch (error) {
+            console.error('Error clearing period', error);
+            alert('Error al limpiar el periodo');
+        }
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in duration-700">
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -81,12 +128,30 @@ const AttendanceReport: React.FC = () => {
                         {pools.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
 
-                    <button 
-                        onClick={fetchReport}
-                        className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition active:scale-95"
-                    >
-                        Consultar
-                    </button>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={fetchReport}
+                            className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition active:scale-95 flex items-center gap-2"
+                        >
+                            Consultar
+                        </button>
+                        <button 
+                            onClick={handleExport}
+                            disabled={attendance.length === 0}
+                            className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                            <Download size={14} />
+                            Excel
+                        </button>
+                        <button 
+                            onClick={handleClearPeriod}
+                            disabled={attendance.length === 0}
+                            className="bg-gray-100 text-gray-400 px-4 py-2 rounded-xl text-xs font-bold hover:bg-rose-50 hover:text-rose-600 transition active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                            title="Limpiar Periodo Seleccionado"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -99,21 +164,23 @@ const AttendanceReport: React.FC = () => {
                             <th className="px-6 py-4 text-center">H. Programada</th>
                             <th className="px-6 py-4 text-center">H. Entrada</th>
                             <th className="px-6 py-4 text-center">Retardo</th>
-                            <th className="px-6 py-4 text-right">Estatus</th>
+                            <th className="px-6 py-4 text-center">Impacto (Llamadas)</th>
+                            <th className="px-6 py-4 text-center">Estatus</th>
+                            <th className="px-6 py-4 text-right">Acción</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                         {loading ? (
                             <tr>
-                                <td colSpan={6} className="px-6 py-20 text-center animate-pulse text-gray-400 font-medium">Cargando reporte...</td>
+                                <td colSpan={8} className="px-6 py-20 text-center animate-pulse text-gray-400 font-medium">Cargando reporte...</td>
                             </tr>
                         ) : attendance.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-6 py-20 text-center text-gray-400 italic">No se encontraron registros para este periodo.</td>
+                                <td colSpan={8} className="px-6 py-20 text-center text-gray-400 italic">No se encontraron registros para este periodo.</td>
                             </tr>
                         ) : (
                             attendance.map((row) => (
-                                <tr key={row.id} className="hover:bg-gray-50/30 transition-colors">
+                                <tr key={row.id} className="hover:bg-gray-50/30 transition-colors group">
                                     <td className="px-6 py-4 text-center text-xs font-mono font-bold text-gray-500">
                                         {row.date}
                                     </td>
@@ -134,15 +201,20 @@ const AttendanceReport: React.FC = () => {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-center">
+                                        <span className="text-xs font-bold text-gray-500">
+                                            {row.delayMinutes} m
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
                                         {row.delayMinutes > 0 ? (
-                                            <span className="text-xs font-black text-amber-600">
-                                                +{row.delayMinutes} min
+                                            <span className="text-xs font-black text-rose-500 bg-rose-50 px-2 py-1 rounded-lg">
+                                                -{Math.round(row.delayMinutes / 11.5)} LLAM
                                             </span>
                                         ) : (
-                                            <span className="text-xs font-bold text-emerald-500">Puntual</span>
+                                            <span className="text-xs text-gray-300">-</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 text-right">
+                                    <td className="px-6 py-4 text-center">
                                         {row.status === 'Late' ? (
                                             <div className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ring-1 ring-inset ring-rose-200">
                                                 <AlertCircle size={10} />
@@ -154,6 +226,15 @@ const AttendanceReport: React.FC = () => {
                                                 A Tiempo
                                             </div>
                                         )}
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button 
+                                            onClick={() => handleDeleteRecord(row.id, row.agentName)}
+                                            className="text-gray-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
+                                            title="Eliminar Registro"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
                                     </td>
                                 </tr>
                             ))
@@ -167,6 +248,9 @@ const AttendanceReport: React.FC = () => {
                 <div className="flex gap-4">
                     <span className="flex items-center gap-1 text-emerald-500"><UserCheck size={12}/> Puntuales: {attendance.filter(a => a.status === 'OnTime').length}</span>
                     <span className="flex items-center gap-1 text-rose-500"><AlertCircle size={12}/> Retardos: {attendance.filter(a => a.status === 'Late').length}</span>
+                    <span className="flex items-center gap-1 text-amber-500 font-black">
+                        <Clock size={12}/> Impacto Total: -{Math.round(attendance.reduce((sum, a) => sum + (a.delayMinutes || 0), 0) / 11.5)} LLAM
+                    </span>
                 </div>
             </div>
         </div>

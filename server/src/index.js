@@ -29,30 +29,35 @@ const DailyMetric = require('./models/DailyMetric');
 const Attendance = require('./models/Attendance');
 const Agent = require('./models/Agent');
 
-sequelize.sync({ alter: true }).then(async () => {
-    console.log('Database synced (Alter Mode - Tables updated)');
+// Sync Database (Non-blocking for VM)
+sequelize.sync({ alter: true })
+    .then(async () => {
+        console.log('Database synced (Alter Mode)');
+        
+        // Solo sembrar datos si la tabla está vacía
+        const count = await Pool.count();
+        if (count === 0) {
+            await Pool.bulkCreate([
+                { name: 'Retención', totalAgents: 98, capacityGoal: 3195 },
+                { name: 'Móvil', totalAgents: 26, capacityGoal: 3195 }
+            ]);
 
-    // Solo sembrar datos si la tabla está vacía
-    const count = await Pool.count();
-    if (count === 0) {
-        await Pool.bulkCreate([
-            { name: 'Retención', totalAgents: 98, capacityGoal: 3195 },
-            { name: 'Móvil', totalAgents: 26, capacityGoal: 3195 }
-        ]);
-
-        await Config.create({
-            shrinkage: 0.20,
-            occupancy: 0.90,
-            ahtMinutes: 11.5,
-            shiftHours: 8.0,
-            dailyGoal: 3195
-        });
-        console.log('Spec 1.0 initial seed complete');
-    }
-
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`Server running on http://192.168.51.123:${PORT}`);
+            await Config.create({
+                shrinkage: 0.20,
+                occupancy: 0.90,
+                ahtMinutes: 11.5,
+                shiftHours: 8.0,
+                dailyGoal: 3195
+            });
+            console.log('Spec 1.0 initial seed complete');
+        }
+    })
+    .catch(err => {
+        console.error('⚠️ Database sync skipped (This is normal for VM):', err.message);
     });
-}).catch(err => {
-    console.error('Failed to sync database:', err);
+
+// Start Server Always (Non-blocking for VM)
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 WFM Server Ready on port ${PORT}`);
+    console.log(`📡 Monitor can be accessed via VM IP or Localhost`);
 });

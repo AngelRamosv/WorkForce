@@ -14,6 +14,7 @@ const xlsx = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 const mysql = require('mysql2/promise');
+const { Op } = require('sequelize');
 
 // --- POOLS & CONFIG ---
 router.get('/pools', async (req, res) => {
@@ -210,22 +211,69 @@ router.get('/live', async (req, res) => {
             realData.tiempos_en_estado = realData.valores.map(v => `${Math.floor(v)}m`);
         }
 
-        // --- MOTOR DE ASISTENCIA (AUTOMÁTICO) ---
+        // --- MOTOR DE ASISTENCIA (AUTOMÁTICO CON TIEMPO DE PRODUCTIVIDAD) ---
         const today = new Date().toISOString().split('T')[0];
         const nowTime = new Date().toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
         if (realData.nombres && Array.isArray(realData.nombres)) {
-            for (const name of realData.nombres) {
-                // 1. Buscar si el agente tiene horario programado
-                const agent = await Agent.findOne({ where: { name } });
+            const allAgents = await Agent.findAll();
+            const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+            // 1. Obtener datos de productividad en tiempo real para el cruce
+            let productivityData = [];
+            try {
+                const prodConn = await mysql.createConnection({
+                    host: '192.168.50.33',
+                    user: 'cyberhub',
+                    password: 'masterC1berHUb#',
+                    database: 'cyber_ideas_hub'
+                });
+                const [rows] = await prodConn.execute('SELECT nombre_agente, tiempo_logueado FROM reporteProductividad');
+                productivityData = rows;
+                await prodConn.end();
+            } catch (err) {
+                console.error('Error connecting to productivity DB:', err.message);
+            }
+
+            for (const nameFromCentral of realData.nombres) {
+                const centralPart = nameFromCentral.split(' - ')[1] || nameFromCentral;
+                const centralTokens = normalize(centralPart).split(/[\s\.]+/).filter(t => t.length > 2);
+
+                if (centralTokens.length === 0) continue;
+
+                const agent = allAgents.find(a => {
+                    const localTokens = normalize(a.name).split(/\s+/).filter(t => t.length > 2);
+                    return centralTokens.some(ct => localTokens.includes(ct));
+                });
+
                 if (!agent) continue;
 
-                // 2. Verificar si ya se registró su asistencia hoy
-                const recorded = await Attendance.findOne({ where: { agentName: name, date: today } });
+                const recorded = await Attendance.findOne({ where: { agentName: agent.name, date: today } });
                 if (!recorded) {
-                    // 3. Primer login detectado: Calcular retardo
+                    // 3. Primer login detectado: Intentar obtener hora real desde productividad
+                    let officialLoginTime = nowTime;
+                    
+                    const prodInfo = productivityData.find(p => {
+                        const prodTokens = normalize(p.nombre_agente).split(/\s+/).filter(t => t.length > 2);
+                        return centralTokens.some(ct => prodTokens.includes(ct));
+                    });
+
+                    if (prodInfo && prodInfo.tiempo_logueado && prodInfo.tiempo_logueado !== '00:00:00') {
+                        try {
+                            const [dH, dM, dS] = prodInfo.tiempo_logueado.split(':').map(Number);
+                            const loginDate = new Date();
+                            loginDate.setHours(loginDate.getHours() - dH);
+                            loginDate.setMinutes(loginDate.getMinutes() - dM);
+                            loginDate.setSeconds(loginDate.getSeconds() - dS);
+                            officialLoginTime = loginDate.toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
+                            console.log(`Cálculo Inverso para ${agent.name}: Hora Actual - ${prodInfo.tiempo_logueado} = ${officialLoginTime}`);
+                        } catch (e) {
+                            console.error('Error en cálculo inverso:', e.message);
+                        }
+                    }
+
                     const [sH, sM] = agent.scheduledStartTime.split(':').map(Number);
-                    const [nH, nM] = nowTime.split(':').map(Number);
+                    const [nH, nM] = officialLoginTime.split(':').map(Number);
                     
                     const scheduledMinutes = sH * 60 + sM;
                     const actualMinutes = nH * 60 + nM;
@@ -235,10 +283,10 @@ router.get('/live', async (req, res) => {
                     const status = delay > tolerance ? 'Late' : 'OnTime';
 
                     await Attendance.create({
-                        agentName: name,
+                        agentName: agent.name,
                         date: today,
                         scheduledStartTime: agent.scheduledStartTime,
-                        actualLoginTime: nowTime,
+                        actualLoginTime: officialLoginTime,
                         delayMinutes: Math.max(0, delay),
                         status,
                         poolId: agent.poolId
@@ -421,6 +469,32 @@ router.post('/reports/save-day', async (req, res) => {
     }
 });
 
+// --- ATTENDANCE DELETE ---
+router.delete('/reports/attendance', async (req, res) => {
+    try {
+        const { startDate, endDate, poolId } = req.query;
+        const where = {};
+        if (startDate && endDate) {
+            where.date = { [Op.between]: [startDate, endDate] };
+        }
+        if (poolId) where.poolId = poolId;
+
+        const deletedCount = await Attendance.destroy({ where });
+        res.json({ success: true, deletedCount });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.delete('/reports/attendance/:id', async (req, res) => {
+    try {
+        await Attendance.destroy({ where: { id: req.params.id } });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.delete('/reports/:id', async (req, res) => {
     try {
         await DailyMetric.destroy({ where: { id: req.params.id } });
@@ -484,7 +558,7 @@ router.get('/reports/attendance', async (req, res) => {
         const { startDate, endDate, poolId } = req.query;
         const where = {};
         if (startDate && endDate) {
-            where.date = { [require('sequelize').Op.between]: [startDate, endDate] };
+            where.date = { [Op.between]: [startDate, endDate] };
         }
         if (poolId) where.poolId = poolId;
 
@@ -498,6 +572,45 @@ router.get('/reports/attendance', async (req, res) => {
     }
 });
 
+router.get('/reports/attendance/export', async (req, res) => {
+    try {
+        const { startDate, endDate, poolId } = req.query;
+        const where = {};
+        if (startDate && endDate) {
+            where.date = { [Op.between]: [startDate, endDate] };
+        }
+        if (poolId) where.poolId = poolId;
+
+        const attendance = await Attendance.findAll({
+            where,
+            order: [['date', 'ASC'], ['agentName', 'ASC']]
+        });
+
+        const data = attendance.map(a => ({
+            'Fecha': a.date,
+            'Agente': a.agentName,
+            'Horario Programado': a.scheduledStartTime,
+            'Hora Entrada Real': a.actualLoginTime,
+            'Retardo (min)': a.delayMinutes,
+            'Impacto (Llamadas)': Math.round(a.delayMinutes / 11.5),
+            'Estatus': a.status === 'Late' ? 'RETARDO' : 'A TIEMPO'
+        }));
+
+        const wb = xlsx.utils.book_new();
+        const ws = xlsx.utils.json_to_sheet(data);
+        xlsx.utils.book_append_sheet(wb, ws, "Asistencia");
+
+        const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=Reporte_Asistencia_${startDate}_${endDate}.xlsx`);
+        res.send(buffer);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 router.post('/reports/migrate-history', async (req, res) => {
     let externalConn;
     try {
@@ -505,7 +618,7 @@ router.post('/reports/migrate-history', async (req, res) => {
         
         await Attendance.destroy({
             where: {
-                date: { [require('sequelize').Op.between]: [startDate || '2026-03-01', endDate || '2026-03-09'] }
+                date: { [Op.between]: [startDate || '2026-03-01', endDate || '2026-03-09'] }
             }
         });
 
