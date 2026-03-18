@@ -20,14 +20,14 @@ app.get('/health', (req, res) => {
 });
 
 // Sync Database and Seed Initial Data
-const Pool = require('./models/Pool');
-const Config = require('./models/Config');
-const WeeklyPlan = require('./models/WeeklyPlan');
-const AuditLog = require('./models/AuditLog');
-const Vacation = require('./models/Vacation');
-const DailyMetric = require('./models/DailyMetric');
-const Attendance = require('./models/Attendance');
-const Agent = require('./models/Agent');
+const Campana = require('./models/Campana');
+const Configuracion = require('./models/Configuracion');
+const PlanSemanal = require('./models/PlanSemanal');
+const BitacoraCambio = require('./models/BitacoraCambio');
+const Vacacion = require('./models/Vacacion');
+const MetricaOperativa = require('./models/MetricaOperativa');
+const Asistencia = require('./models/Asistencia');
+const Agente = require('./models/Agente');
 
 // Sync Database (Non-blocking for VM)
 sequelize.sync({ alter: true })
@@ -35,21 +35,21 @@ sequelize.sync({ alter: true })
         console.log('Database synced (Alter Mode)');
         
         // Solo sembrar datos si la tabla está vacía
-        const count = await Pool.count();
+        const count = await Campana.count();
         if (count === 0) {
-            await Pool.bulkCreate([
-                { name: 'Retención', totalAgents: 98, capacityGoal: 3195 },
-                { name: 'Móvil', totalAgents: 26, capacityGoal: 3195 }
+            await Campana.bulkCreate([
+                { nombre: 'Retención', totalAgentes: 98, metaCapacidad: 3195 },
+                { nombre: 'Móvil', totalAgentes: 26, metaCapacidad: 3195 }
             ]);
 
-            await Config.create({
+            await Configuracion.create({
                 shrinkage: 0.20,
-                occupancy: 0.90,
-                ahtMinutes: 11.5,
-                shiftHours: 8.0,
-                dailyGoal: 3195
+                ocupacion: 0.90,
+                tmoMinutos: 11.5,
+                horasTurno: 8.0,
+                metaDiaria: 3195
             });
-            console.log('Spec 1.0 initial seed complete');
+            console.log('Spec 1.0 initial seed complete (Spanish)');
         }
     })
     .catch(err => {

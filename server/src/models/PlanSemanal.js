@@ -1,36 +1,38 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
 
-const WeeklyPlan = sequelize.define('WeeklyPlan', {
+const PlanSemanal = sequelize.define('PlanSemanal', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    poolId: {
+    campanaId: {
         type: DataTypes.UUID,
         allowNull: false
     },
-    weekNumber: {
+    numeroSemana: {
         type: DataTypes.INTEGER,
         allowNull: false
     },
-    year: {
+    anio: {
         type: DataTypes.INTEGER,
         allowNull: false
     },
-    // Almacenamos la distribución como JSON para el MVP
-    distribution: {
+    distribucion: {
         type: DataTypes.JSON,
         allowNull: false,
         defaultValue: {
-            "Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0, "Saturday": 0, "Sunday": 0
+            "Lunes": 0, "Martes": 0, "Miercoles": 0, "Jueves": 0, "Viernes": 0, "Sabado": 0, "Domingo": 0
         }
     },
-    status: {
-        type: DataTypes.ENUM('Draft', 'Published'),
-        defaultValue: 'Draft'
+    estatus: {
+        type: DataTypes.ENUM('Borrador', 'Publicado'),
+        defaultValue: 'Borrador'
     }
+}, {
+    tableName: 'plan_semanales',
+    timestamps: true
 });
 
-module.exports = WeeklyPlan;
+module.exports = PlanSemanal;

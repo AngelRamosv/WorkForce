@@ -24,9 +24,9 @@ const Audit: React.FC = () => {
     const formatChanges = (changes: any) => {
         if (!changes) return 'Sin detalles';
 
-        // Si es un plan semanal (WeeklyPlan)
-        if (changes.distribution) {
-            const days = Object.keys(changes.distribution);
+        // Si es un plan semanal (PlanSemanal)
+        if (changes.distribucion) {
+            const days = Object.keys(changes.distribucion);
             const total = changes.balance?.totalAllocated || 'N/A';
             return (
                 <div className="space-y-2">
@@ -37,7 +37,7 @@ const Audit: React.FC = () => {
                         {days.map(day => (
                             <div key={day} className="bg-white p-1 rounded-lg border border-gray-100 text-center">
                                 <p className="text-[8px] text-gray-400 font-black uppercase">{day.substring(0, 3)}</p>
-                                <p className="text-xs font-black text-gray-700">{changes.distribution[day].planned}</p>
+                                <p className="text-xs font-black text-gray-700">{changes.distribucion[day].planned}</p>
                             </div>
                         ))}
                     </div>
@@ -61,9 +61,9 @@ const Audit: React.FC = () => {
         const headers = ["Fecha", "Entidad", "Accion", "Cambios"];
         const rows = logs.map(log => [
             new Date(log.createdAt).toLocaleString(),
-            log.entityName,
-            log.action,
-            JSON.stringify(log.changes).replace(/"/g, '""')
+            log.nombreEntidad,
+            log.accion,
+            JSON.stringify(log.cambios).replace(/"/g, '""')
         ]);
         const csvContent = [headers.join(","), ...rows.map(row => `"${row.join('","')}"`)].join("\n");
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -149,18 +149,18 @@ const Audit: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap align-top">
                                         <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-tighter">
-                                            {log.entityName}
+                                            {log.nombreEntidad}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap align-top">
-                                        <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-tighter ${log.action === 'Created' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                                        <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-tighter ${log.accion === 'Creado' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
                                             }`}>
-                                            {log.action}
+                                            {log.accion}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 align-top">
                                         <div className="bg-gray-50/50 p-4 rounded-2xl border border-gray-100 group-hover:bg-white transition-colors">
-                                            {formatChanges(log.changes)}
+                                            {formatChanges(log.cambios)}
                                         </div>
                                     </td>
                                 </tr>

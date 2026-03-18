@@ -34,7 +34,7 @@ const LiveDashboard: React.FC = () => {
             const serviceLevel = 100 - realPct;
 
             // Buscar prioritariamente el pool de Retención
-            const retPool = pools.find(p => p.name.toLowerCase().includes('retencion') || p.name.toLowerCase().includes('retención'));
+            const retPool = pools.find(p => p.nombre.toLowerCase().includes('retencion') || p.nombre.toLowerCase().includes('retención'));
             // Respaldo: el primero que encuentre de la lista real
             const poolId = retPool ? retPool.id : (pools.length > 0 ? pools[0].id : null);
             
@@ -127,8 +127,8 @@ const LiveDashboard: React.FC = () => {
 
     if (!data) return <div className="p-10 text-center text-gray-500 font-mono text-xs">Awaiting data stream...</div>;
 
-    const metasLlamadas = config?.dailyGoal || 3195;
-    const ahtReference = config?.ahtMinutes || 11.5;
+    const metasLlamadas = config?.metaDiaria || 3195;
+    const ahtReference = config?.tmoMinutos || 11.5;
 
     // ==========================================
     // LÓGICA DE CUMPLIMIENTO AL CORTE (PACING)
@@ -179,7 +179,7 @@ const LiveDashboard: React.FC = () => {
             const minutes = parseInt(a.time.replace(/\D/g, '')) || 0;
             return { ...a, minutes };
         })
-        .filter((a: any) => a.minutes > (config?.lateToleranceMinutes || 5)) // Umbral dinámico: 5 minutos
+        .filter((a: any) => a.minutes > (config?.toleranciaRetardoMinutos || 5)) // Umbral dinámico: 5 minutos
         .sort((a: any, b: any) => b.minutes - a.minutes);
 
     const totalFugaMinutes = tardyAgents.reduce((sum: number, a: any) => sum + a.minutes, 0);

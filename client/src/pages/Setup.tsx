@@ -39,7 +39,7 @@ const Setup: React.FC = () => {
         try {
             // Guardar cambios en los pools
             await Promise.all(pools.map(pool =>
-                api.put(`/pools/${pool.id}`, { totalAgents: pool.totalAgents })
+                api.put(`/pools/${pool.id}`, { totalAgentes: pool.totalAgentes })
             ));
 
             // Guardar configuración global
@@ -129,14 +129,14 @@ const Setup: React.FC = () => {
                         {pools.map(pool => (
                             <div key={pool.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center gap-4">
                                 <div className="flex-1">
-                                    <p className="font-bold text-gray-900">{pool.name}</p>
+                                    <p className="font-bold text-gray-900">{pool.nombre}</p>
                                     <p className="text-xs text-gray-500 uppercase font-black">Headcount:</p>
                                 </div>
                                 <input
                                     type="number"
                                     className="w-24 bg-white border border-gray-200 rounded-lg p-2 text-center font-bold text-indigo-600 focus:ring-2 focus:ring-indigo-500"
-                                    value={pool.totalAgents}
-                                    onChange={(e) => handlePoolChange(pool.id, 'totalAgents', parseInt(e.target.value) || 0)}
+                                    value={pool.totalAgentes}
+                                    onChange={(e) => handlePoolChange(pool.id, 'totalAgentes', parseInt(e.target.value) || 0)}
                                 />
                             </div>
                         ))}
@@ -165,8 +165,8 @@ const Setup: React.FC = () => {
                                 <input
                                     type="number"
                                     className="w-full bg-gray-50 border-gray-100 rounded-lg p-3 font-mono focus:ring-2 focus:ring-indigo-500"
-                                    value={config.occupancy * 100}
-                                    onChange={(e) => handleConfigChange('occupancy', parseFloat(e.target.value) / 100)}
+                                    value={config.ocupacion * 100}
+                                    onChange={(e) => handleConfigChange('ocupacion', parseFloat(e.target.value) / 100)}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -175,8 +175,8 @@ const Setup: React.FC = () => {
                                     type="number"
                                     step="0.1"
                                     className="w-full bg-gray-50 border-gray-100 rounded-lg p-3 font-mono focus:ring-2 focus:ring-indigo-500"
-                                    value={config.ahtMinutes}
-                                    onChange={(e) => handleConfigChange('ahtMinutes', parseFloat(e.target.value))}
+                                    value={config.tmoMinutos}
+                                    onChange={(e) => handleConfigChange('tmoMinutos', parseFloat(e.target.value))}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -184,8 +184,8 @@ const Setup: React.FC = () => {
                                 <input
                                     type="number"
                                     className="w-full bg-gray-50 border-gray-100 rounded-lg p-3 font-mono focus:ring-2 focus:ring-indigo-500"
-                                    value={config.shiftHours}
-                                    onChange={(e) => handleConfigChange('shiftHours', parseFloat(e.target.value))}
+                                    value={config.horasTurno}
+                                    onChange={(e) => handleConfigChange('horasTurno', parseFloat(e.target.value))}
                                 />
                             </div>
                         </div>
@@ -198,7 +198,7 @@ const Setup: React.FC = () => {
                 <div className="text-sm text-indigo-900">
                     <p className="font-bold">Principio de Suma Cero:</p>
                     <p className="mt-1 opacity-80">
-                        La ecuación oficial para esta versión es: <code className="bg-white/50 px-1 rounded">((Gente × {config?.shiftHours}h) - Shrinkage) × Ocupación / AHT</code>.
+                        La ecuación oficial para esta versión es: <code className="bg-white/50 px-1 rounded">((Gente × {config?.horasTurno}h) - Shrinkage) × Ocupación / AHT</code>.
                         Cualquier ajuste aquí impactará el semáforo de cumplimiento en el simulador.
                     </p>
                 </div>

@@ -1,28 +1,31 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
 
-const Vacation = sequelize.define('Vacation', {
+const Vacacion = sequelize.define('Vacacion', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    agentName: {
+    nombreAgente: {
         type: DataTypes.STRING,
         allowNull: false
     },
-    startDate: {
+    fechaInicio: {
         type: DataTypes.DATEONLY,
         allowNull: false
     },
-    endDate: {
+    fechaFin: {
         type: DataTypes.DATEONLY,
         allowNull: false
     },
-    poolId: {
+    campanaId: {
         type: DataTypes.UUID,
         allowNull: false
     }
+}, {
+    tableName: 'vacaciones',
+    timestamps: true
 });
 
-module.exports = Vacation;
+module.exports = Vacacion;

@@ -1,36 +1,39 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
 
-const Pool = sequelize.define('Pool', {
+const Campana = sequelize.define('Campana', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    name: {
+    nombre: {
         type: DataTypes.STRING,
         allowNull: false
     },
-    totalAgents: {
+    totalAgentes: {
         type: DataTypes.INTEGER,
         allowNull: false
     },
-    capacityGoal: {
+    metaCapacidad: {
         type: DataTypes.INTEGER,
         defaultValue: 3195
     },
-    allowedShifts: {
+    turnosPermitidos: {
         type: DataTypes.JSON,
         defaultValue: ['A', 'B', 'C']
     },
-    nocturnalAgents: {
+    agentesNocturnos: {
         type: DataTypes.INTEGER,
         defaultValue: 0
     },
-    isActive: {
+    activo: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
     }
+}, {
+    tableName: 'campanas',
+    timestamps: true
 });
 
-module.exports = Pool;
+module.exports = Campana;

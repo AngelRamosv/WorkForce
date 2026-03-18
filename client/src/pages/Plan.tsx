@@ -56,7 +56,7 @@ const Plan: React.FC = () => {
                         onChange={handlePoolChange}
                         className="bg-transparent border-none focus:ring-0 text-sm font-bold text-gray-700 pr-8"
                     >
-                        {pools.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {pools.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                     </select>
                 </div>
             </div>
@@ -70,7 +70,7 @@ const Plan: React.FC = () => {
                         </div>
                         <div>
                             <p className="text-xl font-bold text-gray-900">Archivo Vacío</p>
-                            <p className="text-gray-400">No hay planes registrados para {pools.find(p => p.id == selectedPoolId)?.name}.</p>
+                            <p className="text-gray-400">No hay planes registrados para {pools.find(p => p.id == selectedPoolId)?.nombre}.</p>
                         </div>
                     </div>
                 ) : (
@@ -83,8 +83,8 @@ const Plan: React.FC = () => {
                                             <Calendar size={24} />
                                         </div>
                                         <div>
-                                            <h3 className="text-lg font-black text-gray-900 italic">SEMANA {plan.weekNumber}</h3>
-                                            <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">{plan.year}</p>
+                                            <h3 className="text-lg font-black text-gray-900 italic">SEMANA {plan.numeroSemana}</h3>
+                                            <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">{plan.anio}</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter">
@@ -94,7 +94,7 @@ const Plan: React.FC = () => {
                                 </div>
 
                                 <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
-                                    {Object.entries(plan.distribution).map(([day, data]: [string, any]) => (
+                                    {Object.entries(plan.distribucion).map(([day, data]: [string, any]) => (
                                         <div key={day} className="relative p-4 bg-gray-50 rounded-2xl border border-transparent group-hover:border-indigo-100 transition-colors">
                                             <p className="text-[10px] text-gray-400 uppercase font-bold mb-1 opacity-70">{day.substring(0, 3)}</p>
                                             <div className="flex flex-col items-baseline gap-1">

@@ -1,32 +1,35 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
 
-const AuditLog = sequelize.define('AuditLog', {
+const BitacoraCambio = sequelize.define('BitacoraCambio', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    entityName: {
+    nombreEntidad: {
         type: DataTypes.STRING,
         allowNull: false
     },
-    entityId: {
+    idEntidad: {
         type: DataTypes.UUID,
         allowNull: false
     },
-    action: {
+    accion: {
         type: DataTypes.STRING,
-        allowNull: false // Created, Updated, Deleted
+        allowNull: false // Creado, Actualizado, Eliminado
     },
-    changes: {
+    cambios: {
         type: DataTypes.JSON,
         allowNull: true
     },
-    user: {
+    usuario: {
         type: DataTypes.STRING,
-        defaultValue: 'System'
+        defaultValue: 'Sistema'
     }
+}, {
+    tableName: 'bitacora_cambios',
+    timestamps: true
 });
 
-module.exports = AuditLog;
+module.exports = BitacoraCambio;

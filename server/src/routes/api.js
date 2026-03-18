@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const Pool = require('../models/Pool');
-const Config = require('../models/Config');
-const WeeklyPlan = require('../models/WeeklyPlan');
-const AuditLog = require('../models/AuditLog');
-const Vacation = require('../models/Vacation');
-const DailyMetric = require('../models/DailyMetric');
-const Attendance = require('../models/Attendance');
-const Agent = require('../models/Agent');
+const Campana = require('../models/Campana');
+const Configuracion = require('../models/Configuracion');
+const PlanSemanal = require('../models/PlanSemanal');
+const BitacoraCambio = require('../models/BitacoraCambio');
+const Vacacion = require('../models/Vacacion');
+const MetricaOperativa = require('../models/MetricaOperativa');
+const Asistencia = require('../models/Asistencia');
+const Agente = require('../models/Agente');
 const WfmService = require('../services/WfmService');
 const axios = require('axios');
 const xlsx = require('xlsx');
@@ -16,41 +16,41 @@ const fs = require('fs');
 const mysql = require('mysql2/promise');
 const { Op } = require('sequelize');
 
-// --- POOLS & CONFIG ---
+// --- CAMPAÑAS & CONFIGURACIÓN ---
 router.get('/pools', async (req, res) => {
-    const pools = await Pool.findAll();
-    res.json(pools);
+    const campanas = await Campana.findAll();
+    res.json(campanas);
 });
 
 router.put('/pools/:id', async (req, res) => {
     try {
-        const { totalAgents, nocturnalAgents } = req.body;
-        const pool = await Pool.findByPk(req.params.id);
-        if (!pool) return res.status(404).json({ error: 'Pool not found' });
+        const { totalAgentes, agentesNocturnos } = req.body;
+        const campana = await Campana.findByPk(req.params.id);
+        if (!campana) return res.status(404).json({ error: 'Campaña no encontrada' });
         
-        if (totalAgents !== undefined) pool.totalAgents = totalAgents;
-        if (nocturnalAgents !== undefined) pool.nocturnalAgents = nocturnalAgents;
+        if (totalAgentes !== undefined) campana.totalAgentes = totalAgentes;
+        if (agentesNocturnos !== undefined) campana.agentesNocturnos = agentesNocturnos;
         
-        await pool.save();
-        res.json(pool);
+        await campana.save();
+        res.json(campana);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
 router.get('/config', async (req, res) => {
-    const config = await Config.findOne();
+    const config = await Configuracion.findOne();
     res.json(config);
 });
 
 router.put('/config', async (req, res) => {
     try {
-        const { shrinkage, occupancy, ahtMinutes, shiftHours, dailyGoal } = req.body;
-        let config = await Config.findOne();
+        const { shrinkage, ocupacion, tmoMinutos, horasTurno, metaDiaria } = req.body;
+        let config = await Configuracion.findOne();
         if (!config) {
-            config = await Config.create({ shrinkage, occupancy, ahtMinutes, shiftHours, dailyGoal });
+            config = await Configuracion.create({ shrinkage, ocupacion, tmoMinutos, horasTurno, metaDiaria });
         } else {
-            await config.update({ shrinkage, occupancy, ahtMinutes, shiftHours, dailyGoal });
+            await config.update({ shrinkage, ocupacion, tmoMinutos, horasTurno, metaDiaria });
         }
         res.json(config);
     } catch (error) {
@@ -122,14 +122,14 @@ router.post('/staff/sync', async (req, res) => {
             const agentName = row[nameColumn] ? row[nameColumn].toString().trim() : 'Agente Desconocido';
 
             // Determinar poolId
-            const targetPool = poolsList.find(p => isMovil ? p.name.toLowerCase().includes('movil') : p.name.toLowerCase().includes('retencion'));
+            const targetPool = poolsList.find(p => isMovil ? p.nombre.toLowerCase().includes('movil') : p.nombre.toLowerCase().includes('retencion'));
 
             // Guardar Agente
-            await Agent.upsert({
-                name: agentName,
-                poolId: targetPool ? targetPool.id : null,
-                scheduledStartTime: scheduledTime,
-                shift: shiftName
+            await Agente.upsert({
+                nombre: agentName,
+                campanaId: targetPool ? targetPool.id : null,
+                horaEntradaProgramada: scheduledTime,
+                turno: shiftName
             });
 
             if (isMovil) {
@@ -143,12 +143,12 @@ router.post('/staff/sync', async (req, res) => {
 
         // Actualizar pools en DB (incluyendo cantidad de nocturnos)
         for (const pool of poolsList) {
-            if (pool.name.toLowerCase().includes('retencion') || pool.name.toLowerCase().includes('retención')) {
-                pool.totalAgents = retencionCount;
-                pool.nocturnalAgents = retencionNocturno;
-            } else if (pool.name.toLowerCase().includes('movil') || pool.name.toLowerCase().includes('móvil')) {
-                pool.totalAgents = movilCount;
-                pool.nocturnalAgents = movilNocturno;
+            if (pool.nombre.toLowerCase().includes('retencion') || pool.nombre.toLowerCase().includes('retención')) {
+                pool.totalAgentes = retencionCount;
+                pool.agentesNocturnos = retencionNocturno;
+            } else if (pool.nombre.toLowerCase().includes('movil') || pool.nombre.toLowerCase().includes('móvil')) {
+                pool.totalAgentes = movilCount;
+                pool.agentesNocturnos = movilNocturno;
             }
             await pool.save();
         }
@@ -166,15 +166,15 @@ router.post('/staff/sync', async (req, res) => {
     }
 });
 
-// --- VACATIONS ---
+// --- VACACIONES ---
 router.get('/vacations', async (req, res) => {
-    const vacations = await Vacation.findAll();
+    const vacations = await Vacacion.findAll();
     res.json(vacations);
 });
 
 router.post('/vacations', async (req, res) => {
     try {
-        const vacation = await Vacation.create(req.body);
+        const vacation = await Vacacion.create(req.body);
         res.json(vacation);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -182,7 +182,7 @@ router.post('/vacations', async (req, res) => {
 });
 
 router.delete('/vacations/:id', async (req, res) => {
-    await Vacation.destroy({ where: { id: req.params.id } });
+    await Vacacion.destroy({ where: { id: req.params.id } });
     res.json({ success: true });
 });
 
@@ -191,10 +191,10 @@ router.get('/live', async (req, res) => {
     try {
         const response = await axios.get('http://192.168.48.183:8050/data', { timeout: 3000 });
         const realData = response.data;
-        const config = await Config.findOne();
+        const config = await Configuracion.findOne();
 
-        const offsetCalls = config?.offsetCalls || 0;
-        const offsetAbandoned = config?.offsetAbandoned || 0;
+        const offsetCalls = config?.ajusteLlamadas || 0;
+        const offsetAbandoned = config?.ajusteAbandonadas || 0;
 
         // Limpiar llamadas acumuladas si hay reset activo
         if (realData.llamadas_ingresadas !== undefined) {
@@ -216,7 +216,7 @@ router.get('/live', async (req, res) => {
         const nowTime = new Date().toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
         if (realData.nombres && Array.isArray(realData.nombres)) {
-            const allAgents = await Agent.findAll();
+            const allAgents = await Agente.findAll();
             const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
             // 1. Obtener datos de productividad en tiempo real para el cruce
@@ -228,7 +228,7 @@ router.get('/live', async (req, res) => {
                     password: 'masterC1berHUb#',
                     database: 'cyber_ideas_hub'
                 });
-                const [rows] = await prodConn.execute('SELECT nombre_agente, tiempo_logueado FROM reporteProductividad');
+                const [rows] = await prodConn.execute('SELECT nombre_agente, tiempo_logueado FROM reporteProductividad ORDER BY id DESC');
                 productivityData = rows;
                 await prodConn.end();
             } catch (err) {
@@ -242,13 +242,13 @@ router.get('/live', async (req, res) => {
                 if (centralTokens.length === 0) continue;
 
                 const agent = allAgents.find(a => {
-                    const localTokens = normalize(a.name).split(/\s+/).filter(t => t.length > 2);
+                    const localTokens = normalize(a.nombre).split(/\s+/).filter(t => t.length > 2);
                     return centralTokens.some(ct => localTokens.includes(ct));
                 });
 
                 if (!agent) continue;
 
-                const recorded = await Attendance.findOne({ where: { agentName: agent.name, date: today } });
+                const recorded = await Asistencia.findOne({ where: { nombreAgente: agent.nombre, fecha: today } });
                 if (!recorded) {
                     // 3. Primer login detectado: Intentar obtener hora real desde productividad
                     let officialLoginTime = nowTime;
@@ -266,46 +266,49 @@ router.get('/live', async (req, res) => {
                             loginDate.setMinutes(loginDate.getMinutes() - dM);
                             loginDate.setSeconds(loginDate.getSeconds() - dS);
                             officialLoginTime = loginDate.toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
-                            console.log(`Cálculo Inverso para ${agent.name}: Hora Actual - ${prodInfo.tiempo_logueado} = ${officialLoginTime}`);
+                            console.log(`Cálculo Inverso para ${agent.nombre}: Hora Actual - ${prodInfo.tiempo_logueado} = ${officialLoginTime}`);
                         } catch (e) {
                             console.error('Error en cálculo inverso:', e.message);
                         }
                     }
 
-                    const [sH, sM] = agent.scheduledStartTime.split(':').map(Number);
+                    const [sH, sM] = agent.horaEntradaProgramada.split(':').map(Number);
                     const [nH, nM] = officialLoginTime.split(':').map(Number);
                     
                     const scheduledMinutes = sH * 60 + sM;
                     const actualMinutes = nH * 60 + nM;
                     const delay = actualMinutes - scheduledMinutes;
 
-                    const tolerance = config?.lateToleranceMinutes || 5;
-                    const status = delay > tolerance ? 'Late' : 'OnTime';
+                    const tolerance = config?.toleranciaRetardoMinutos || 5;
+                    const tmo = config?.tmoMinutos || 11.5;
+                    const delayMinutos = Math.max(0, delay);
+                    const impacto = Math.round(delayMinutos / tmo);
 
-                    await Attendance.create({
-                        agentName: agent.name,
-                        date: today,
-                        scheduledStartTime: agent.scheduledStartTime,
-                        actualLoginTime: officialLoginTime,
-                        delayMinutes: Math.max(0, delay),
-                        status,
-                        poolId: agent.poolId
+                    await Asistencia.create({
+                        nombreAgente: agent.nombre,
+                        fecha: today,
+                        horaEntradaProgramada: agent.horaEntradaProgramada,
+                        horaEntradaReal: officialLoginTime,
+                        minutosRetardo: delayMinutos,
+                        impactoLlamadas: impacto,
+                        estatusAsistencia: delay > tolerance ? 'Retardo' : 'A Tiempo',
+                        campanaId: agent.campanaId
                     });
                 }
             }
         }
         // --- ENRIQUECER CON TOTALES DE PUNTUALIDAD REAL ---
-        const todayAttendance = await Attendance.findAll({
-            where: { date: today, status: 'Late' }
+        const todayAttendance = await Asistencia.findAll({
+            where: { fecha: today, estatusAsistencia: 'Retardo' }
         });
 
-        const totalLoginDelay = todayAttendance.reduce((sum, a) => sum + a.delayMinutes, 0);
+        const totalLoginDelay = todayAttendance.reduce((sum, a) => sum + a.minutosRetardo, 0);
         
         realData.puntualidad = {
             totalLoginDelay,
             tardyEntrants: todayAttendance.map(a => ({
-                name: a.agentName,
-                delay: a.delayMinutes
+                name: a.nombreAgente,
+                delay: a.minutosRetardo
             }))
         };
 
@@ -326,11 +329,11 @@ router.post('/live/reset', async (req, res) => {
         const currentTotal = response.data.llamadas_ingresadas || 0;
         const currentAbandoned = response.data.abandonadas_total || 0;
 
-        let config = await Config.findOne();
+        let config = await Configuracion.findOne();
         if (!config) {
-            config = await Config.create({ offsetCalls: currentTotal, offsetAbandoned: currentAbandoned });
+            config = await Configuracion.create({ ajusteLlamadas: currentTotal, ajusteAbandonadas: currentAbandoned });
         } else {
-            await config.update({ offsetCalls: currentTotal, offsetAbandoned: currentAbandoned });
+            await config.update({ ajusteLlamadas: currentTotal, ajusteAbandonadas: currentAbandoned });
         }
 
         res.json({ success: true, message: 'Filtro de reseteo aplicado', offsetApplied: currentTotal });
@@ -339,11 +342,11 @@ router.post('/live/reset', async (req, res) => {
     }
 });
 
-// --- PLANS ---
+// --- PLANES ---
 router.get('/plans/:poolId', async (req, res) => {
-    const plans = await WeeklyPlan.findAll({
-        where: { poolId: req.params.poolId },
-        order: [['year', 'DESC'], ['weekNumber', 'DESC']]
+    const plans = await PlanSemanal.findAll({
+        where: { campanaId: req.params.poolId },
+        order: [['anio', 'DESC'], ['numeroSemana', 'DESC']]
     });
     res.json(plans);
 });
@@ -357,34 +360,34 @@ router.post('/simulate', async (req, res) => {
 router.post('/plans', async (req, res) => {
     try {
         const { poolId, weekNumber, year, distribution } = req.body;
-        const pool = await Pool.findByPk(poolId);
-        if (!pool) return res.status(404).json({ error: 'Pool not found' });
+        const pool = await Campana.findByPk(poolId);
+        if (!pool) return res.status(404).json({ error: 'Campaña no encontrada' });
 
-        const balance = WfmService.calculateZeroSumBalance(pool.totalAgents, distribution);
+        const balance = WfmService.calculateZeroSumBalance(pool.totalAgentes, distribution);
 
         // Buscar si ya existe un plan para este pool, semana y año
-        let plan = await WeeklyPlan.findOne({
-            where: { poolId, weekNumber, year }
+        let plan = await PlanSemanal.findOne({
+            where: { campanaId: poolId, numeroSemana: weekNumber, anio: year }
         });
 
         if (plan) {
             // Actualizar plan existente
-            await plan.update({ distribution });
-            await AuditLog.create({
-                entityName: 'WeeklyPlan',
-                entityId: plan.id,
-                action: 'Updated',
-                changes: { distribution, balance }
+            await plan.update({ distribucion: distribution });
+            await BitacoraCambio.create({
+                nombreEntidad: 'PlanSemanal',
+                idEntidad: plan.id,
+                accion: 'Actualizado',
+                cambios: { distribucion: distribution, balance }
             });
             return res.json({ plan, balance, message: 'Plan actualizado correctamente' });
         } else {
             // Crear nuevo plan
-            plan = await WeeklyPlan.create({ poolId, weekNumber, year, distribution });
-            await AuditLog.create({
-                entityName: 'WeeklyPlan',
-                entityId: plan.id,
-                action: 'Created',
-                changes: { distribution, balance }
+            plan = await PlanSemanal.create({ campanaId: poolId, numeroSemana: weekNumber, anio: year, distribucion: distribution });
+            await BitacoraCambio.create({
+                nombreEntidad: 'PlanSemanal',
+                idEntidad: plan.id,
+                accion: 'Creado',
+                cambios: { distribucion: distribution, balance }
             });
             return res.json({ plan, balance, message: 'Nuevo plan creado correctamente' });
         }
@@ -396,15 +399,15 @@ router.post('/plans', async (req, res) => {
 
 router.delete('/plans/:id', async (req, res) => {
     try {
-        const plan = await WeeklyPlan.findByPk(req.params.id);
+        const plan = await PlanSemanal.findByPk(req.params.id);
         if (plan) {
-            await AuditLog.create({
-                entityName: 'WeeklyPlan',
-                entityId: plan.id,
-                action: 'Deleted',
-                changes: { message: `Plan de la semana ${plan.weekNumber} (${plan.year}) eliminado por el usuario.` }
+            await BitacoraCambio.create({
+                nombreEntidad: 'PlanSemanal',
+                idEntidad: plan.id,
+                accion: 'Eliminado',
+                cambios: { message: `Plan de la semana ${plan.numeroSemana} (${plan.anio}) eliminado por el usuario.` }
             });
-            await WeeklyPlan.destroy({ where: { id: req.params.id } });
+            await PlanSemanal.destroy({ where: { id: req.params.id } });
         }
         res.json({ success: true });
     } catch (error) {
@@ -412,10 +415,10 @@ router.delete('/plans/:id', async (req, res) => {
     }
 });
 
-// --- AUDIT ---
+// --- AUDITORÍA ---
 router.get('/audit', async (req, res) => {
     try {
-        const logs = await AuditLog.findAll({
+        const logs = await BitacoraCambio.findAll({
             order: [['createdAt', 'DESC']]
         });
         res.json(logs);
@@ -426,37 +429,50 @@ router.get('/audit', async (req, res) => {
 
 router.delete('/audit', async (req, res) => {
     try {
-        await AuditLog.destroy({ where: {}, truncate: true });
+        await BitacoraCambio.destroy({ where: {}, truncate: true });
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// --- REPORTS / COMPLIANCE ---
+// --- REPORTES / CUMPLIMIENTO ---
 router.post('/reports/save-day', async (req, res) => {
     try {
         const { poolId, totalCalls, answeredCalls, abandonedCalls, serviceLevel, totalAgentsActive } = req.body;
         const today = new Date().toISOString().split('T')[0];
 
-        // 1. Guardar o actualizar la métrica diaria
-        let existing = await DailyMetric.findOne({ where: { poolId, date: today } });
+        // 1. Guardar o actualizar la métrica operativa
+        let existing = await MetricaOperativa.findOne({ where: { campanaId: poolId, fecha: today } });
         if (existing) {
-            await existing.update({ totalCalls, answeredCalls, abandonedCalls, serviceLevel, totalAgentsActive });
+            await existing.update({ 
+                totalLlamadas: totalCalls, 
+                llamadasContestadas: answeredCalls, 
+                llamadasAbandonadas: abandonedCalls, 
+                nivelServicio: serviceLevel, 
+                totalAgentesActivos: totalAgentsActive 
+            });
         } else {
-            await DailyMetric.create({ poolId, date: today, totalCalls, answeredCalls, abandonedCalls, serviceLevel, totalAgentsActive });
+            await MetricaOperativa.create({ 
+                campanaId: poolId, 
+                fecha: today, 
+                totalLlamadas: totalCalls, 
+                llamadasContestadas: answeredCalls, 
+                llamadasAbandonadas: abandonedCalls, 
+                nivelServicio: serviceLevel, 
+                totalAgentesActivos: totalAgentsActive 
+            });
         }
 
         // 2. REINICIO AUTOMÁTICO PARA MAÑANA: 
-        // Capturamos el total actual de la central para que mañana el "nuevo día" empiece en 0.
         try {
             const centralRes = await axios.get('http://192.168.48.183:8050/data', { timeout: 3000 });
             const currentTotal = centralRes.data.llamadas_ingresadas || 0;
             const currentAbandoned = centralRes.data.abandonadas_total || 0;
 
-            let config = await Config.findOne();
+            let config = await Configuracion.findOne();
             if (config) {
-                await config.update({ offsetCalls: currentTotal, offsetAbandoned: currentAbandoned });
+                await config.update({ ajusteLlamadas: currentTotal, ajusteAbandonadas: currentAbandoned });
             }
         } catch (centralError) {
             console.warn('Reinicio automático falló: No se pudo contactar a la central', centralError.message);
@@ -469,17 +485,17 @@ router.post('/reports/save-day', async (req, res) => {
     }
 });
 
-// --- ATTENDANCE DELETE ---
+// --- BORRADO DE ASISTENCIA ---
 router.delete('/reports/attendance', async (req, res) => {
     try {
         const { startDate, endDate, poolId } = req.query;
         const where = {};
         if (startDate && endDate) {
-            where.date = { [Op.between]: [startDate, endDate] };
+            where.fecha = { [Op.between]: [startDate, endDate] };
         }
-        if (poolId) where.poolId = poolId;
+        if (poolId) where.campanaId = poolId;
 
-        const deletedCount = await Attendance.destroy({ where });
+        const deletedCount = await Asistencia.destroy({ where });
         res.json({ success: true, deletedCount });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -488,7 +504,7 @@ router.delete('/reports/attendance', async (req, res) => {
 
 router.delete('/reports/attendance/:id', async (req, res) => {
     try {
-        await Attendance.destroy({ where: { id: req.params.id } });
+        await Asistencia.destroy({ where: { id: req.params.id } });
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -497,7 +513,7 @@ router.delete('/reports/attendance/:id', async (req, res) => {
 
 router.delete('/reports/:id', async (req, res) => {
     try {
-        await DailyMetric.destroy({ where: { id: req.params.id } });
+        await MetricaOperativa.destroy({ where: { id: req.params.id } });
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -506,44 +522,43 @@ router.delete('/reports/:id', async (req, res) => {
 
 router.get('/reports/compliance', async (req, res) => {
     try {
-        const metrics = await DailyMetric.findAll({
-            order: [['date', 'DESC']]
+        const metrics = await MetricaOperativa.findAll({
+            order: [['fecha', 'DESC']]
         });
 
         const complianceData = await Promise.all(metrics.map(async (metric) => {
-            let pool = await Pool.findByPk(metric.poolId);
+            let pool = await Campana.findByPk(metric.campanaId);
             
-            // Si el poolId es inválido (como el '1' antiguo), buscamos el primer pool disponible
             if (!pool) {
-                pool = await Pool.findOne();
+                pool = await Campana.findOne();
             }
 
-            const plan = await WeeklyPlan.findOne({
-                where: { poolId: pool ? pool.id : metric.poolId },
+            const plan = await PlanSemanal.findOne({
+                where: { campanaId: pool ? pool.id : metric.campanaId },
                 order: [['createdAt', 'DESC']]
             });
 
-            const dateObj = new Date(metric.date + 'T12:00:00Z');
-            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const dateObj = new Date(metric.fecha + 'T12:00:00Z');
+            const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
             const dayName = dayNames[dateObj.getUTCDay()];
 
             let plannedAgents = 0;
-            if (plan && plan.distribution && plan.distribution[dayName]) {
-                plannedAgents = plan.distribution[dayName].planned || 0;
+            if (plan && plan.distribucion && plan.distribucion[dayName]) {
+                plannedAgents = plan.distribucion[dayName].planned || 0;
             }
 
-            const compliancePct = plannedAgents > 0 ? Math.round((metric.totalAgentsActive / plannedAgents) * 100) : 0;
+            const compliancePct = plannedAgents > 0 ? Math.round((metric.totalAgentesActivos / plannedAgents) * 100) : 0;
 
             return {
                 id: metric.id,
-                date: metric.date,
-                poolName: pool ? pool.name : 'Unknown',
+                date: metric.fecha,
+                poolName: pool ? pool.nombre : 'Desconocido',
                 plannedAgents,
-                activeAgents: metric.totalAgentsActive,
+                activeAgents: metric.totalAgentesActivos,
                 compliancePct,
-                totalCalls: metric.totalCalls,
-                abandonedCalls: metric.abandonedCalls,
-                serviceLevel: metric.serviceLevel
+                totalCalls: metric.totalLlamadas,
+                abandonedCalls: metric.llamadasAbandonadas,
+                serviceLevel: metric.nivelServicio
             };
         }));
 
@@ -558,13 +573,13 @@ router.get('/reports/attendance', async (req, res) => {
         const { startDate, endDate, poolId } = req.query;
         const where = {};
         if (startDate && endDate) {
-            where.date = { [Op.between]: [startDate, endDate] };
+            where.fecha = { [Op.between]: [startDate, endDate] };
         }
-        if (poolId) where.poolId = poolId;
+        if (poolId) where.campanaId = poolId;
 
-        const attendance = await Attendance.findAll({
+        const attendance = await Asistencia.findAll({
             where,
-            order: [['date', 'DESC'], ['actualLoginTime', 'ASC']]
+            order: [['fecha', 'DESC'], ['horaEntradaReal', 'ASC']]
         });
         res.json(attendance);
     } catch (error) {
@@ -577,23 +592,23 @@ router.get('/reports/attendance/export', async (req, res) => {
         const { startDate, endDate, poolId } = req.query;
         const where = {};
         if (startDate && endDate) {
-            where.date = { [Op.between]: [startDate, endDate] };
+            where.fecha = { [Op.between]: [startDate, endDate] };
         }
-        if (poolId) where.poolId = poolId;
+        if (poolId) where.campanaId = poolId;
 
-        const attendance = await Attendance.findAll({
+        const attendance = await Asistencia.findAll({
             where,
-            order: [['date', 'ASC'], ['agentName', 'ASC']]
+            order: [['fecha', 'ASC'], ['nombreAgente', 'ASC']]
         });
 
         const data = attendance.map(a => ({
-            'Fecha': a.date,
-            'Agente': a.agentName,
-            'Horario Programado': a.scheduledStartTime,
-            'Hora Entrada Real': a.actualLoginTime,
-            'Retardo (min)': a.delayMinutes,
-            'Impacto (Llamadas)': Math.round(a.delayMinutes / 11.5),
-            'Estatus': a.status === 'Late' ? 'RETARDO' : 'A TIEMPO'
+            'Fecha': a.fecha,
+            'Agente': a.nombreAgente,
+            'Horario Programado': a.horaEntradaProgramada,
+            'Hora Entrada Real': a.horaEntradaReal,
+            'Retardo (min)': a.minutosRetardo,
+            'Impacto (Llamadas)': a.impactoLlamadas || 0,
+            'Estatus': a.estatusAsistencia === 'Retardo' ? 'RETARDO' : 'A TIEMPO'
         }));
 
         const wb = xlsx.utils.book_new();
@@ -616,9 +631,9 @@ router.post('/reports/migrate-history', async (req, res) => {
     try {
         const { startDate, endDate } = req.body;
         
-        await Attendance.destroy({
+        await Asistencia.destroy({
             where: {
-                date: { [Op.between]: [startDate || '2026-03-01', endDate || '2026-03-09'] }
+                fecha: { [Op.between]: [startDate || '2026-03-01', endDate || '2026-03-09'] }
             }
         });
 
@@ -639,17 +654,17 @@ router.post('/reports/migrate-history', async (req, res) => {
             GROUP BY a.personal_id, a.fecha_asistencia
         `, [startDate || '2026-03-01', endDate || '2026-03-09']);
 
-        const agents = await Agent.findAll();
-        const config = await Config.findOne();
-        const tolerance = config?.lateToleranceMinutes || 5;
+        const agents = await Agente.findAll();
+        const config = await Configuracion.findOne();
+        const tolerance = config?.toleranciaRetardoMinutos || 5;
+        const tmo = config?.tmoMinutos || 11.5;
 
-        let migratedCount = 0;
         const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
         for (const row of rows) {
             const extTokens = normalize(row.personal_nombre).split(/\s+/).filter(t => t.length > 2);
             const localAgent = agents.find(a => {
-                const locTokens = normalize(a.name).split(/\s+/).filter(t => t.length > 2);
+                const locTokens = normalize(a.nombre).split(/\s+/).filter(t => t.length > 2);
                 const matches = extTokens.filter(t => locTokens.includes(t));
                 return matches.length >= 2;
             });
@@ -657,29 +672,28 @@ router.post('/reports/migrate-history', async (req, res) => {
             if (localAgent) {
                 const dateStr = row.fecha_asistencia.toISOString().split('T')[0];
                 const loginDate = new Date(row.first_login);
-                
-                // YA NO SUBSTRAEMOS 6 HORAS. Usamos la hora tal cual viene.
                 const actualTime = loginDate.toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
-                const [sH, sM] = localAgent.scheduledStartTime.split(':').map(Number);
+                const [sH, sM] = localAgent.horaEntradaProgramada.split(':').map(Number);
                 const [nH, nM] = actualTime.split(':').map(Number);
                 
                 const scheduledMinutes = sH * 60 + sM;
                 const actualMinutes = nH * 60 + nM;
                 const delay = actualMinutes - scheduledMinutes;
                 
-                const status = delay > tolerance ? 'Late' : 'OnTime';
+                const delayMinutos = Math.max(0, delay);
+                const impacto = Math.round(delayMinutos / tmo);
 
-                await Attendance.create({
-                    agentName: localAgent.name,
-                    date: dateStr,
-                    scheduledStartTime: localAgent.scheduledStartTime,
-                    actualLoginTime: actualTime,
-                    delayMinutes: Math.max(0, delay),
-                    status,
-                    poolId: localAgent.poolId
+                await Asistencia.create({
+                    nombreAgente: localAgent.nombre,
+                    fecha: dateStr,
+                    horaEntradaProgramada: localAgent.horaEntradaProgramada,
+                    horaEntradaReal: actualTime,
+                    minutosRetardo: delayMinutos,
+                    impactoLlamadas: impacto,
+                    estatusAsistencia: delay > tolerance ? 'Retardo' : 'A Tiempo',
+                    campanaId: localAgent.campanaId
                 });
-                migratedCount++;
             }
         }
         res.json({ success: true, message: `Migración exitosa. Se procesaron ${rows.length} registros reales.` });

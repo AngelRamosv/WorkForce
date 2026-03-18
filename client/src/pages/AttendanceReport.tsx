@@ -125,7 +125,7 @@ const AttendanceReport: React.FC = () => {
                         onChange={(e) => setFilters({...filters, poolId: e.target.value})}
                     >
                         <option value="">Todas las Campañas</option>
-                        {pools.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {pools.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                     </select>
 
                     <div className="flex gap-2">
@@ -182,40 +182,40 @@ const AttendanceReport: React.FC = () => {
                             attendance.map((row) => (
                                 <tr key={row.id} className="hover:bg-gray-50/30 transition-colors group">
                                     <td className="px-6 py-4 text-center text-xs font-mono font-bold text-gray-500">
-                                        {row.date}
+                                        {row.fecha}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-2">
                                             <div className="w-8 h-8 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 font-bold text-[10px]">
-                                                {row.agentName.substring(0,2).toUpperCase()}
+                                                {row.nombreAgente.substring(0,2).toUpperCase()}
                                             </div>
-                                            <span className="text-xs font-bold text-gray-700">{row.agentName}</span>
+                                            <span className="text-xs font-bold text-gray-700">{row.nombreAgente}</span>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-center text-xs font-medium text-gray-400 italic">
-                                        {row.scheduledStartTime}
+                                        {row.horaEntradaProgramada}
                                     </td>
                                     <td className="px-6 py-4 text-center">
                                         <span className="text-xs font-black text-gray-800 bg-gray-100 px-2 py-1 rounded-lg">
-                                            {row.actualLoginTime}
+                                            {row.horaEntradaReal}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-center">
                                         <span className="text-xs font-bold text-gray-500">
-                                            {row.delayMinutes} m
+                                            {row.minutosRetardo} m
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-center">
-                                        {row.delayMinutes > 0 ? (
+                                        {row.minutosRetardo > 0 ? (
                                             <span className="text-xs font-black text-rose-500 bg-rose-50 px-2 py-1 rounded-lg">
-                                                -{Math.round(row.delayMinutes / 11.5)} LLAM
+                                                -{row.impactoLlamadas} LLAM
                                             </span>
                                         ) : (
                                             <span className="text-xs text-gray-300">-</span>
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-center">
-                                        {row.status === 'Late' ? (
+                                        {row.estatusAsistencia === 'Retardo' ? (
                                             <div className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ring-1 ring-inset ring-rose-200">
                                                 <AlertCircle size={10} />
                                                 Retardo
@@ -229,7 +229,7 @@ const AttendanceReport: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <button 
-                                            onClick={() => handleDeleteRecord(row.id, row.agentName)}
+                                            onClick={() => handleDeleteRecord(row.id, row.nombreAgente)}
                                             className="text-gray-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
                                             title="Eliminar Registro"
                                         >
@@ -246,10 +246,10 @@ const AttendanceReport: React.FC = () => {
             <div className="flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase tracking-widest px-2">
                 <p>Total registros: {attendance.length}</p>
                 <div className="flex gap-4">
-                    <span className="flex items-center gap-1 text-emerald-500"><UserCheck size={12}/> Puntuales: {attendance.filter(a => a.status === 'OnTime').length}</span>
-                    <span className="flex items-center gap-1 text-rose-500"><AlertCircle size={12}/> Retardos: {attendance.filter(a => a.status === 'Late').length}</span>
+                    <span className="flex items-center gap-1 text-emerald-500"><UserCheck size={12}/> Puntuales: {attendance.filter(a => a.estatusAsistencia === 'A Tiempo').length}</span>
+                    <span className="flex items-center gap-1 text-rose-500"><AlertCircle size={12}/> Retardos: {attendance.filter(a => a.estatusAsistencia === 'Retardo').length}</span>
                     <span className="flex items-center gap-1 text-amber-500 font-black">
-                        <Clock size={12}/> Impacto Total: -{Math.round(attendance.reduce((sum, a) => sum + (a.delayMinutes || 0), 0) / 11.5)} LLAM
+                        <Clock size={12}/> Impacto Total: -{attendance.reduce((sum, a) => sum + (a.impactoLlamadas || 0), 0)} LLAM
                     </span>
                 </div>
             </div>

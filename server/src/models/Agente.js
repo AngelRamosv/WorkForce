@@ -1,29 +1,32 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
 
-const Agent = sequelize.define('Agent', {
+const Agente = sequelize.define('Agente', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    name: {
+    nombre: {
         type: DataTypes.STRING,
         allowNull: false,
         unique: true
     },
-    poolId: {
+    campanaId: {
         type: DataTypes.UUID,
         allowNull: true
     },
-    scheduledStartTime: {
+    horaEntradaProgramada: {
         type: DataTypes.STRING, // "HH:mm"
         allowNull: true
     },
-    shift: {
+    turno: {
         type: DataTypes.STRING, // "Matutino", "Vespertino", "Nocturno"
         allowNull: true
     }
+}, {
+    tableName: 'agentes',
+    timestamps: true
 });
 
-module.exports = Agent;
+module.exports = Agente;

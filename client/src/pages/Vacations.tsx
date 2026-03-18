@@ -9,10 +9,10 @@ const Vacations: React.FC = () => {
 
     // Form state
     const [formData, setFormData] = useState({
-        agentName: '',
-        startDate: '',
-        endDate: '',
-        poolId: ''
+        nombreAgente: '',
+        fechaInicio: '',
+        fechaFin: '',
+        campanaId: ''
     });
 
     useEffect(() => {
@@ -28,7 +28,7 @@ const Vacations: React.FC = () => {
             setVacations(vacRes.data);
             setPools(poolRes.data);
             if (poolRes.data.length > 0) {
-                setFormData(prev => ({ ...prev, poolId: poolRes.data[0].id }));
+                setFormData(prev => ({ ...prev, campanaId: poolRes.data[0].id }));
             }
         } catch (error) {
             console.error('Error fetching data', error);
@@ -41,7 +41,7 @@ const Vacations: React.FC = () => {
         e.preventDefault();
         try {
             await api.post('/vacations', formData);
-            setFormData({ ...formData, agentName: '', startDate: '', endDate: '' });
+            setFormData({ ...formData, nombreAgente: '', fechaInicio: '', fechaFin: '' });
             fetchData();
             alert('Vacaciones registradas correctamente');
         } catch (error) {
@@ -82,8 +82,8 @@ const Vacations: React.FC = () => {
                             <input
                                 required
                                 className="w-full p-2.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500"
-                                value={formData.agentName}
-                                onChange={e => setFormData({ ...formData, agentName: e.target.value })}
+                                value={formData.nombreAgente}
+                                onChange={e => setFormData({ ...formData, nombreAgente: e.target.value })}
                                 placeholder="Ej. Juan Perez"
                             />
                         </div>
@@ -94,8 +94,8 @@ const Vacations: React.FC = () => {
                                     required
                                     type="date"
                                     className="w-full p-2.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500"
-                                    value={formData.startDate}
-                                    onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+                                    value={formData.fechaInicio}
+                                    onChange={e => setFormData({ ...formData, fechaInicio: e.target.value })}
                                 />
                             </div>
                             <div className="space-y-1">
@@ -104,8 +104,8 @@ const Vacations: React.FC = () => {
                                     required
                                     type="date"
                                     className="w-full p-2.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500"
-                                    value={formData.endDate}
-                                    onChange={e => setFormData({ ...formData, endDate: e.target.value })}
+                                    value={formData.fechaFin}
+                                    onChange={e => setFormData({ ...formData, fechaFin: e.target.value })}
                                 />
                             </div>
                         </div>
@@ -113,10 +113,10 @@ const Vacations: React.FC = () => {
                             <label className="text-xs font-bold text-gray-500 uppercase">Pool / Negocio</label>
                             <select
                                 className="w-full p-2.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500"
-                                value={formData.poolId}
-                                onChange={e => setFormData({ ...formData, poolId: e.target.value })}
+                                value={formData.campanaId}
+                                onChange={e => setFormData({ ...formData, campanaId: e.target.value })}
                             >
-                                {pools.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                {pools.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                             </select>
                         </div>
                         <button className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl hover:bg-emerald-700 transition shadow-lg shadow-emerald-50 active:scale-95 mt-4">
@@ -146,14 +146,14 @@ const Vacations: React.FC = () => {
                                     <tr key={vac.id} className="hover:bg-gray-50">
                                         <td className="py-4 px-4 font-bold text-gray-800 flex items-center gap-2">
                                             <User size={14} className="text-gray-400" />
-                                            {vac.agentName}
+                                            {vac.nombreAgente}
                                         </td>
                                         <td className="py-4 px-4 text-gray-500">
-                                            {vac.startDate} al {vac.endDate}
+                                            {vac.fechaInicio} al {vac.fechaFin}
                                         </td>
                                         <td className="py-4 px-4">
                                             <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-[10px] font-bold uppercase">
-                                                {pools.find(p => p.id === vac.poolId)?.name}
+                                                {pools.find(p => p.id === vac.campanaId)?.nombre}
                                             </span>
                                         </td>
                                         <td className="py-4 px-4 text-right">

@@ -1,24 +1,24 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
 
-const Config = sequelize.define('Config', {
+const Configuracion = sequelize.define('Configuracion', {
     shrinkage: {
         type: DataTypes.FLOAT,
         defaultValue: 0.20
     },
-    occupancy: {
+    ocupacion: {
         type: DataTypes.FLOAT,
         defaultValue: 0.90
     },
-    ahtMinutes: {
+    tmoMinutos: {
         type: DataTypes.FLOAT,
         defaultValue: 11.5
     },
-    shiftHours: {
+    horasTurno: {
         type: DataTypes.FLOAT,
         defaultValue: 8.0
     },
-    restDaysPerWeek: {
+    diasDescansoSemana: {
         type: DataTypes.INTEGER,
         defaultValue: 1
     },
@@ -30,22 +30,25 @@ const Config = sequelize.define('Config', {
         type: DataTypes.INTEGER,
         allowNull: true
     },
-    dailyGoal: {
+    metaDiaria: {
         type: DataTypes.INTEGER,
         defaultValue: 3195
     },
-    offsetCalls: {
+    ajusteLlamadas: {
         type: DataTypes.INTEGER,
         defaultValue: 0
     },
-    offsetAbandoned: {
+    ajusteAbandonadas: {
         type: DataTypes.INTEGER,
         defaultValue: 0
     },
-    lateToleranceMinutes: {
+    toleranciaRetardoMinutos: {
         type: DataTypes.INTEGER,
         defaultValue: 5
     }
+}, {
+    tableName: 'configuracion',
+    timestamps: true
 });
 
-module.exports = Config;
+module.exports = Configuracion;

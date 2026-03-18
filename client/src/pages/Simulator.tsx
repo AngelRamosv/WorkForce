@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { LayoutDashboard, Save, AlertCircle, CheckCircle2, RotateCcw, Activity, Palmtree } from 'lucide-react';
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const DAYS = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
 
 interface DayData {
     matutino: number;
@@ -41,7 +41,7 @@ const Simulator: React.FC = () => {
             setVacations(vacRes.data);
             
             if (poolsRes.data.length > 0) {
-                const retPool = poolsRes.data.find((p: any) => p.name.toLowerCase().includes('retencion') || p.name.toLowerCase().includes('retención'));
+                const retPool = poolsRes.data.find((p: any) => p.nombre.toLowerCase().includes('retencion') || p.nombre.toLowerCase().includes('retención'));
                 setSelectedPoolId(retPool ? retPool.id : poolsRes.data[0].id);
             }
         } catch (error) {
@@ -61,11 +61,11 @@ const Simulator: React.FC = () => {
         if (selectedPoolId && selectedPoolId !== lastPreloadPoolId) {
             const pool = pools.find(p => p.id === selectedPoolId);
             if (pool) {
-                const noctCount = pool.nocturnalAgents || 0;
+                const noctCount = pool.agentesNocturnos || 0;
                 setDistribution(prev => {
                     const next = { ...prev };
                     DAYS.forEach(day => {
-                        const isWeekend = day === 'Saturday' || day === 'Sunday';
+                        const isWeekend = day === 'Sabado' || day === 'Domingo';
                         const n = isWeekend ? 0 : noctCount;
                         next[day] = { 
                             ...prev[day], 
@@ -89,7 +89,7 @@ const Simulator: React.FC = () => {
 
         try {
             const res = await api.post('/simulate', {
-                totalAgents: pool.totalAgents,
+                totalAgents: pool.totalAgentes,
                 distribution
             });
             setBalance(res.data);
@@ -119,9 +119,9 @@ const Simulator: React.FC = () => {
 
     const calculateCapacity = (planned: number) => {
         if (!config) return 0;
-        const { shrinkage, occupancy, ahtMinutes, shiftHours } = config;
+        const { shrinkage, ocupacion, tmoMinutos, horasTurno } = config;
         const effective = planned * (1 - shrinkage);
-        return Math.round((effective * shiftHours * 60 * occupancy) / ahtMinutes);
+        return Math.round((effective * horasTurno * 60 * ocupacion) / tmoMinutos);
     };
 
     const handleSave = async () => {
@@ -138,7 +138,7 @@ const Simulator: React.FC = () => {
                 year: 2026,
                 distribution
             });
-            alert('Plan guardado y auditado exitosamente conforme a Spec 1.0');
+            alert('Plan guardado y auditado exitosamente conforme a la estructura profesional.');
         } catch (error) {
             alert('Error al guardar el plan');
         } finally {
@@ -150,18 +150,16 @@ const Simulator: React.FC = () => {
         const pool = pools.find(p => p.id === selectedPoolId);
         if (!pool) return;
 
-        // --- LÓGICA DE VACACIONES ---
         // Contamos cuántas vacaciones activas hay para este pool
-        // Para Spec 1.0 simplificado, restamos el headcount de vacaciones al pool directamente
-        const poolVacations = vacations.filter(v => v.poolId === parseInt(selectedPoolId));
-        const totalVacCount = poolVacations.length; // Simplificado: agentes fuera toda la semana
+        const poolVacations = vacations.filter(v => v.campanaId === parseInt(selectedPoolId));
+        const totalVacCount = poolVacations.length; 
 
-        const totalAgents = pool.totalAgents - totalVacCount;
+        const totalAgents = pool.totalAgentes - totalVacCount;
 
         // NUEVA LÓGICA IA AVANZADA
         // 1. Descansos: Repartir solo de Miércoles a Domingo (Lunes y Martes 0 descansos)
-        const restDaysMap: any = { Monday: 0, Tuesday: 0, Wednesday: 0, Thursday: 0, Friday: 0, Saturday: 0, Sunday: 0 };
-        const allowedRestDays = ['Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const restDaysMap: any = { Lunes: 0, Martes: 0, Miercoles: 0, Jueves: 0, Viernes: 0, Sabado: 0, Domingo: 0 };
+        const allowedRestDays = ['Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
         let remainingRestDays = totalAgents;
         let dayIdx = 0;
 
@@ -176,8 +174,8 @@ const Simulator: React.FC = () => {
             let planned = totalAgents - rest;
 
             // 2. Turno Nocturno Congelado
-            const noctFromExcel = pool.nocturnalAgents || 0;
-            let nocturno = (day === 'Saturday' || day === 'Sunday') ? 0 : noctFromExcel;
+            const noctFromExcel = pool.agentesNocturnos || 0;
+            let nocturno = (day === 'Sabado' || day === 'Domingo') ? 0 : noctFromExcel;
             
             if (nocturno > planned) nocturno = planned; 
 
@@ -186,7 +184,7 @@ const Simulator: React.FC = () => {
             let vespertino = 0;
 
             // 3. Fines de semana: Solo Matutino
-            if (day === 'Saturday' || day === 'Sunday') {
+            if (day === 'Sabado' || day === 'Domingo') {
                 matutino = remainingToPlan;
                 vespertino = 0;
             } else {
@@ -205,7 +203,7 @@ const Simulator: React.FC = () => {
         if (totalVacCount > 0) {
             alert(`IA: Plan generado descontando ${totalVacCount} agentes en vacaciones.`);
         } else {
-            alert(`IA: Plan balanceado generado para ${pool.name} (${totalAgents} agentes)`);
+            alert(`IA: Plan balanceado generado para ${pool.nombre} (${totalAgents} agentes)`);
         }
     };
     return (
@@ -214,7 +212,7 @@ const Simulator: React.FC = () => {
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <LayoutDashboard className="text-indigo-600" />
-                        Simulador de Suma Cero (Spec 1.0)
+                        Simulador de Suma Cero (Modelo Profesional)
                     </h1>
                     <p className="text-gray-500 mt-1">Ajusta la distribución diaria o usa la IA para balancear.</p>
                 </div>
@@ -247,7 +245,7 @@ const Simulator: React.FC = () => {
                                 const res = await api.get('/live');
                                 const pool = pools.find(p => p.id === selectedPoolId);
                                 if (pool) {
-                                    handlePoolChange(pool.id, 'totalAgents', res.data.total_agentes);
+                                    handlePoolChange(pool.id, 'totalAgentes', res.data.total_agentes);
                                     alert(`Staff Real cargado: ${res.data.total_agentes} agentes activos en este momento.`);
                                 }
                             } catch (error) {
@@ -266,16 +264,16 @@ const Simulator: React.FC = () => {
                         onChange={(e) => setSelectedPoolId(e.target.value)}
                     >
                         {pools.map(p => (
-                            <option key={p.id} value={p.id}>{p.name} ({p.totalAgents} agentes)</option>
+                            <option key={p.id} value={p.id}>{p.nombre} ({p.totalAgentes} agentes)</option>
                         ))}
                     </select>
                 </div>
             </div>
 
-            {vacations.filter(v => v.poolId === parseInt(selectedPoolId)).length > 0 && (
+            {vacations.filter(v => v.campanaId === parseInt(selectedPoolId)).length > 0 && (
                 <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex items-center gap-3 text-emerald-800 text-sm font-medium">
                     <Palmtree className="text-emerald-600" />
-                    Hay {vacations.filter(v => v.poolId === parseInt(selectedPoolId)).length} agentes con vacaciones aprobadas para este pool.
+                    Hay {vacations.filter(v => v.campanaId === parseInt(selectedPoolId)).length} agentes con vacaciones aprobadas para este pool.
                 </div>
             )}
 
@@ -391,9 +389,9 @@ const Simulator: React.FC = () => {
                     </button>
 
                     <div className="bg-white p-4 rounded-lg border border-gray-100 text-[11px] text-gray-400 space-y-1">
-                        <p className="font-bold text-gray-500 uppercase">Referencia Spec 1.0</p>
-                        <p>• AHT: {config?.ahtMinutes} min</p>
-                        <p>• Ocupación: {Math.round(config?.occupancy * 100)}%</p>
+                        <p className="font-bold text-gray-500 uppercase">Referencia Profesional</p>
+                        <p>• AHT: {config?.tmoMinutos} min</p>
+                        <p>• Ocupación: {Math.round(config?.ocupacion * 100)}%</p>
                         <p>• Shrinkage: {Math.round(config?.shrinkage * 100)}%</p>
                     </div>
                 </div>
