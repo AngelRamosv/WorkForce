@@ -129,6 +129,7 @@ router.post('/staff/sync', async (req, res) => {
                 nombre: agentName,
                 campanaId: targetPool ? targetPool.id : null,
                 horaEntradaProgramada: scheduledTime,
+                numero_agente: row['Nómina'] || row['Nomina'] || row['ID'] || row['numero_agente'],
                 turno: shiftName
             });
 
@@ -254,8 +255,7 @@ router.get('/live', async (req, res) => {
                     let officialLoginTime = nowTime;
                     
                     const prodInfo = productivityData.find(p => {
-                        const prodTokens = normalize(p.nombre_agente).split(/\s+/).filter(t => t.length > 2);
-                        return centralTokens.some(ct => prodTokens.includes(ct));
+                        return p.numero_agente === agent.numero_agente;
                     });
 
                     if (prodInfo && prodInfo.tiempo_logueado && prodInfo.tiempo_logueado !== '00:00:00') {

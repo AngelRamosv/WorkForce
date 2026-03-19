@@ -12,6 +12,11 @@ const Agente = sequelize.define('Agente', {
         allowNull: false,
         unique: true
     },
+    numero_agente: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        unique: true
+    },
     campanaId: {
         type: DataTypes.UUID,
         allowNull: true
