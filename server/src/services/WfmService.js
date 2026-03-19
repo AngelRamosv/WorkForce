@@ -6,11 +6,20 @@ class WfmService {
     static calculateZeroSumBalance(totalAgents, distribution) {
         let totalAllocated = 0;
 
-        // Iterar por los 7 días (Lunes a Domingo)
-        // distribution: { "Monday": { planned: 84, rest: 14, vacation: 0 }, ... }
-        Object.values(distribution).forEach(day => {
-            totalAllocated += (day.planned || 0) + (day.rest || 0) + (day.vacation || 0);
-        });
+        // Iterar por los 7 días
+        for (const [day, data] of Object.entries(distribution)) {
+            // REGLA: Lunes y Martes NO HAY DESCANSOS ni VACACIONES (Spec 1.2)
+            if ((day === 'Monday' || day === 'Tuesday') && (data.rest > 0 || data.vacation > 0)) {
+                return {
+                    isBalanced: false,
+                    totalAllocated,
+                    weeklyTotalCapacity,
+                    delta: 0,
+                    message: `ERROR: No está permitido asignar DESCANSOS ni VACACIONES los días Lunes o Martes.`
+                };
+            }
+            totalAllocated += (data.planned || 0) + (data.rest || 0) + (data.vacation || 0);
+        }
 
         const weeklyTotalCapacity = totalAgents * 7;
         const delta = weeklyTotalCapacity - totalAllocated;
