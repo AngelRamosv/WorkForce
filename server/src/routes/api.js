@@ -352,8 +352,9 @@ router.get('/plans/:poolId', async (req, res) => {
 });
 
 router.post('/simulate', async (req, res) => {
-    const { totalAgents, distribution } = req.body;
-    const balance = WfmService.calculateZeroSumBalance(totalAgents, distribution);
+    const { totalAgents, distribution, agentesNocturnos } = req.body;
+    const effectiveTotal = (totalAgents || 0) - (agentesNocturnos || 0);
+    const balance = WfmService.calculateZeroSumBalance(effectiveTotal, distribution);
     res.json(balance);
 });
 
@@ -363,7 +364,9 @@ router.post('/plans', async (req, res) => {
         const pool = await Campana.findByPk(poolId);
         if (!pool) return res.status(404).json({ error: 'Campaña no encontrada' });
 
-        const balance = WfmService.calculateZeroSumBalance(pool.totalAgentes, distribution);
+        // EXCLUSIÓN NOCTURNOS PARA IA (Spec 1.1)
+        const effectiveTotalAgents = (pool.totalAgentes || 0) - (pool.agentesNocturnos || 0);
+        const balance = WfmService.calculateZeroSumBalance(effectiveTotalAgents, distribution);
 
         // Buscar si ya existe un plan para este pool, semana y año
         let plan = await PlanSemanal.findOne({
