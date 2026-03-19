@@ -81,7 +81,7 @@ router.post('/staff/sync', async (req, res) => {
 
         // Limpiar agentes previos antes de la nueva carga (opcional, o actualizar por nombre)
         // Por simplicidad en MVP, actualizaremos si existe o crearemos si no.
-        const poolsList = await Pool.findAll();
+        const poolsList = await Campana.findAll();
 
         for (const row of data) {
             const rowValues = Object.values(row).map(v => (v || '').toString().toLowerCase());

@@ -7,15 +7,18 @@ async function exportReport() {
         console.log('Generando reporte Excel...');
         const [rows] = await sequelize.query(`
             SELECT 
-                fecha AS "Fecha", 
-                nombreAgente AS "Agente", 
-                horaEntradaProgramada AS "Horario Programado", 
-                minutosRetardo AS "Minutos Retardo", 
-                impactoLlamadas AS "Impacto (Llamadas)", 
-                estatusAsistencia AS "Estatus" 
-            FROM asistencias 
-            WHERE fecha = CURDATE() 
-            ORDER BY minutosRetardo DESC
+                a.fecha AS "Fecha", 
+                a.nombreAgente AS "Agente", 
+                a.horaEntradaProgramada AS "Horario Programado", 
+                a.minutosRetardo AS "Minutos Retardo", 
+                a.impactoLlamadas AS "Impacto (Llamadas)", 
+                a.estatusAsistencia AS "Estatus" 
+            FROM asistencias a
+            JOIN agentes ag ON a.nombreAgente = ag.nombre
+            WHERE a.fecha = CURDATE() 
+              AND ag.turno != 'Nocturno'
+              AND a.minutosRetardo > 0
+            ORDER BY a.minutosRetardo DESC
         `);
 
         if (rows.length === 0) {
