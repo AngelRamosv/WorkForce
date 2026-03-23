@@ -567,6 +567,7 @@ router.get('/reports/attendance', async (req, res) => {
 
 // Función Maestra de Sincronización (Solo se llama bajod demanda)
 async function syncAttendanceFromCentral(targetDate) {
+console.log("Running sync for", targetDate);
     try {
         const allAgents = await Agente.findAll();
         const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -591,10 +592,15 @@ async function syncAttendanceFromCentral(targetDate) {
             console.error('Sync Database error:', err.message);
         }
 
-        if (productivityData.length === 0) return;
+        if (productivityData.length === 0) {
+console.log("No productivity data! Aborting.");
+return;
+}
+console.log("Got prod data length:", productivityData.length);
 
         // 2. Filtrar ya grabados para hoy
-        const existingEntries = await Asistencia.findAll({ where: { fecha: targetDate } });
+        console.log("Processing agents...");
+const existingEntries = await Asistencia.findAll({ where: { fecha: targetDate } });
         const recordedNames = new Set(existingEntries.map(a => a.nombreAgente));
 
         const nowTime = new Date().toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });

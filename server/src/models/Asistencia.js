@@ -36,7 +36,7 @@ const Asistencia = sequelize.define('Asistencia', {
         defaultValue: 0
     },
     estatusAsistencia: {
-        type: DataTypes.ENUM('A Tiempo', 'Retardo', 'Falta'),
+        type: DataTypes.STRING,
         defaultValue: 'A Tiempo'
     },
     campanaId: {

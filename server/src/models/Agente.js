@@ -3,8 +3,8 @@ const sequelize = require('../database');
 
 const Agente = sequelize.define('Agente', {
     id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
+        type: DataTypes.INTEGER,
+        autoIncrement: true,
         primaryKey: true
     },
     nombre: {
@@ -16,10 +16,6 @@ const Agente = sequelize.define('Agente', {
         type: DataTypes.STRING,
         allowNull: true,
         unique: true
-    },
-    campanaId: {
-        type: DataTypes.UUID,
-        allowNull: true
     },
     horaEntradaProgramada: {
         type: DataTypes.STRING, // "HH:mm"
