@@ -23,6 +23,10 @@ const Asistencia = sequelize.define('Asistencia', {
         type: DataTypes.STRING, // formato "HH:mm"
         allowNull: true
     },
+    tiempoLogueado: {
+        type: DataTypes.STRING, // formato "HH:mm:ss"
+        allowNull: true
+    },
     minutosRetardo: {
         type: DataTypes.INTEGER,
         defaultValue: 0

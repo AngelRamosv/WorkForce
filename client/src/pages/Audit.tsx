@@ -85,7 +85,6 @@ const Audit: React.FC = () => {
                         <ShieldCheck className="text-indigo-600" />
                         Registro de Auditoría
                     </h1>
-                    <p className="text-gray-500 mt-2">Trazabilidad oficial de cambios procesada para lectura humana.</p>
                 </div>
                 <div className="flex gap-3">
                     <button

@@ -82,6 +82,7 @@ router.post('/staff/sync', async (req, res) => {
         // Limpiar agentes previos antes de la nueva carga (opcional, o actualizar por nombre)
         // Por simplicidad en MVP, actualizaremos si existe o crearemos si no.
         const poolsList = await Campana.findAll();
+        const possibleColumns = ['turno', 'horario', 'entrada', 'salida', 'jornada', 'shift', 'schedule', 'time'];
 
         for (const row of data) {
             const rowValues = Object.values(row).map(v => (v || '').toString().toLowerCase());
@@ -90,29 +91,46 @@ router.post('/staff/sync', async (req, res) => {
             // Clasificación de Pool
             const isMovil = rowStr.includes('movil') || rowStr.includes('móvil');
             
-            // Detección de Turno y Horario
-            const possibleColumns = ['turno', 'horario', 'jornada', 'shift', 'modality', 'entrada'];
-            const actualColumn = Object.keys(row).find(key => 
-                possibleColumns.some(pc => key.toLowerCase().includes(pc))
-            );
-            
             let isNocturno = false;
-            const nocturnalKeywords = ['nocturno', 'night', '2:00', '2 am', 'noc', 't3', '23:', '00:', '22:'];
             let scheduledTime = '09:00'; // Default
             let shiftName = 'Matutino';
 
-            if (actualColumn) {
-                const val = row[actualColumn].toString().toLowerCase();
-                isNocturno = nocturnalKeywords.some(kw => val.includes(kw));
-                
-                // Intentar extraer hora (formato HH:mm)
-                const timeMatch = val.match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/);
-                if (timeMatch) scheduledTime = timeMatch[0];
+            // FUENTE DE VERDAD PRINCIPAL: Columna 'Turno' del Excel
+            const turnoDirecto = (row['Turno'] || row['turno'] || row['TURNO'] || '').toString().trim();
+            if (turnoDirecto) {
+                const turnoLow = turnoDirecto.toLowerCase();
+                if (turnoLow.includes('nocturno') || turnoLow.includes('noche')) {
+                    isNocturno = true;
+                    shiftName = 'Nocturno';
+                    scheduledTime = '23:00';
+                } else if (turnoLow.includes('vespertino') || turnoLow.includes('tarde')) {
+                    shiftName = 'Vespertino';
+                    scheduledTime = '12:00';
+                } else {
+                    shiftName = 'Matutino';
+                    scheduledTime = '09:00';
+                }
             } else {
-                isNocturno = nocturnalKeywords.some(kw => rowStr.includes(kw));
+                // Respaldo: leer el horario de la fila si no hay columna Turno
+                for (const key of Object.keys(row)) {
+                    const val = (row[key] || '').toString().toLowerCase();
+                    const keyLow = key.toLowerCase();
+                    if (possibleColumns.some(pc => keyLow.includes(pc))) {
+                        // Detectar nocturno por horario de inicio (23:xx o 00:xx)
+                        const timeMatch = val.match(/^([01]?[0-9]|2[0-3]):[0-5][0-9]/);
+                        if (timeMatch) {
+                            scheduledTime = timeMatch[0];
+                            const startHour = parseInt(timeMatch[0].split(':')[0]);
+                            if (startHour >= 22 || startHour <= 2) {
+                                isNocturno = true;
+                                shiftName = 'Nocturno';
+                            } else if (startHour >= 12) {
+                                shiftName = 'Vespertino';
+                            }
+                        }
+                    }
+                }
             }
-
-            if (isNocturno) shiftName = 'Nocturno';
 
             // Detección de nombre
             const nameColumn = Object.keys(row).find(key => 
@@ -121,8 +139,14 @@ router.post('/staff/sync', async (req, res) => {
 
             const agentName = row[nameColumn] ? row[nameColumn].toString().trim() : 'Agente Desconocido';
 
+            const normalizeStr = (s) => (s || '').toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            const rowStrNormalized = normalizeStr(rowStr);
+
             // Determinar poolId
-            const targetPool = poolsList.find(p => isMovil ? p.nombre.toLowerCase().includes('movil') : p.nombre.toLowerCase().includes('retencion'));
+            const targetPool = poolsList.find(p => {
+                const pName = normalizeStr(p.nombre);
+                return isMovil ? pName.includes('movil') : pName.includes('retencion');
+            });
 
             // Guardar Agente
             await Agente.upsert({
@@ -190,7 +214,18 @@ router.delete('/vacations/:id', async (req, res) => {
 // --- LIVE (DATA WITH RESET LOGIC) ---
 router.get('/live', async (req, res) => {
     try {
-        const response = await axios.get('http://192.168.48.183:8050/data', { timeout: 3000 });
+        let response;
+        try {
+            response = await axios.get('http://192.168.48.183:8050/data', { timeout: 10000 });
+        } catch (centralError) {
+            console.error('CRITICAL: Dashboard Central Offline', centralError.message);
+            return res.status(503).json({
+                error: 'Central de Datos Inalcanzable (KPIs)',
+                message: `El servidor de métricas no respondió (Timeout 10s). Detalle: ${centralError.message}`,
+                type: 'CENTRAL_OFFLINE'
+            });
+        }
+
         const realData = response.data;
         const config = await Configuracion.findOne();
 
@@ -212,120 +247,42 @@ router.get('/live', async (req, res) => {
             realData.tiempos_en_estado = realData.valores.map(v => `${Math.floor(v)}m`);
         }
 
-        // --- MOTOR DE ASISTENCIA (AUTOMÁTICO CON TIEMPO DE PRODUCTIVIDAD) ---
-        const today = new Date().toISOString().split('T')[0];
-        const nowTime = new Date().toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        // --- MOTOR DE ASISTENCIA (SÓLO LECTURA PARA DASHBOARD) ---
+        try {
+            const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+            
+            const todayAttendance = await Asistencia.findAll({
+                where: { fecha: today, estatusAsistencia: 'Retardo' }
+            });
 
-        if (realData.nombres && Array.isArray(realData.nombres)) {
-            const allAgents = await Agente.findAll();
-            const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-
-            // 1. Obtener datos de productividad en tiempo real para el cruce
-            let productivityData = [];
-            try {
-                const prodConn = await mysql.createConnection({
-                    host: '192.168.50.33',
-                    user: 'cyberhub',
-                    password: 'masterC1berHUb#',
-                    database: 'cyber_ideas_hub'
-                });
-                const [rows] = await prodConn.execute('SELECT nombre_agente, tiempo_logueado FROM reporteProductividad ORDER BY id DESC');
-                productivityData = rows;
-                await prodConn.end();
-            } catch (err) {
-                console.error('Error connecting to productivity DB:', err.message);
-            }
-
-            for (const nameFromCentral of realData.nombres) {
-                const centralPart = nameFromCentral.split(' - ')[1] || nameFromCentral;
-                const centralTokens = normalize(centralPart).split(/[\s\.]+/).filter(t => t.length > 2);
-
-                if (centralTokens.length === 0) continue;
-
-                const agent = allAgents.find(a => {
-                    const localTokens = normalize(a.nombre).split(/\s+/).filter(t => t.length > 2);
-                    return centralTokens.some(ct => localTokens.includes(ct));
-                });
-
-                if (!agent) continue;
-
-                const recorded = await Asistencia.findOne({ where: { nombreAgente: agent.nombre, fecha: today } });
-                if (!recorded) {
-                    // 3. Primer login detectado: Intentar obtener hora real desde productividad
-                    let officialLoginTime = nowTime;
-                    
-                    const prodInfo = productivityData.find(p => {
-                        return p.numero_agente === agent.numero_agente;
-                    });
-
-                    if (prodInfo && prodInfo.tiempo_logueado && prodInfo.tiempo_logueado !== '00:00:00') {
-                        try {
-                            const [dH, dM, dS] = prodInfo.tiempo_logueado.split(':').map(Number);
-                            const loginDate = new Date();
-                            loginDate.setHours(loginDate.getHours() - dH);
-                            loginDate.setMinutes(loginDate.getMinutes() - dM);
-                            loginDate.setSeconds(loginDate.getSeconds() - dS);
-                            officialLoginTime = loginDate.toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
-                            console.log(`Cálculo Inverso para ${agent.nombre}: Hora Actual - ${prodInfo.tiempo_logueado} = ${officialLoginTime}`);
-                        } catch (e) {
-                            console.error('Error en cálculo inverso:', e.message);
-                        }
-                    }
-
-                    const [sH, sM] = agent.horaEntradaProgramada.split(':').map(Number);
-                    const [nH, nM] = officialLoginTime.split(':').map(Number);
-                    
-                    const scheduledMinutes = sH * 60 + sM;
-                    const actualMinutes = nH * 60 + nM;
-                    const delay = actualMinutes - scheduledMinutes;
-
-                    const tolerance = config?.toleranciaRetardoMinutos || 5;
-                    const tmo = config?.tmoMinutos || 11.5;
-                    const delayMinutos = Math.max(0, delay);
-                    const impacto = Math.round(delayMinutos / tmo);
-
-                    await Asistencia.create({
-                        nombreAgente: agent.nombre,
-                        fecha: today,
-                        horaEntradaProgramada: agent.horaEntradaProgramada,
-                        horaEntradaReal: officialLoginTime,
-                        minutosRetardo: delayMinutos,
-                        impactoLlamadas: impacto,
-                        estatusAsistencia: delay > tolerance ? 'Retardo' : 'A Tiempo',
-                        campanaId: agent.campanaId
-                    });
-                }
-            }
+            const totalLoginDelay = todayAttendance
+                .filter(a => a.horaEntradaProgramada !== '23:00')
+                .reduce((sum, a) => sum + a.minutosRetardo, 0);
+            
+            realData.puntualidad = {
+                totalLoginDelay,
+                tardyEntrants: todayAttendance.map(a => ({
+                    name: a.nombreAgente,
+                    delay: a.minutosRetardo
+                }))
+            };
+        } catch (dbError) {
+            console.error('ERROR: Database Query for Live Dashboard', dbError.message);
+            // Si la BD falla, no bloqueamos el dashboard completo, enviamos datos vacíos de puntualidad
+            realData.puntualidad = { totalLoginDelay: 0, tardyEntrants: [], notice: 'Datos de asistencia temporalmente no disponibles' };
         }
-        // --- ENRIQUECER CON TOTALES DE PUNTUALIDAD REAL ---
-        const todayAttendance = await Asistencia.findAll({
-            where: { fecha: today, estatusAsistencia: 'Retardo' }
-        });
-
-        const totalLoginDelay = todayAttendance.reduce((sum, a) => sum + a.minutosRetardo, 0);
-        
-        realData.puntualidad = {
-            totalLoginDelay,
-            tardyEntrants: todayAttendance.map(a => ({
-                name: a.nombreAgente,
-                delay: a.minutosRetardo
-            }))
-        };
 
         res.json(realData);
-    } catch (error) {
-        console.error('CRITICAL: Central Offline', error.message);
-        res.status(503).json({
-            error: 'Central de Datos Inalcanzable',
-            message: 'Asegúrese de estar conectado a la red local de la oficina.'
-        });
+    } catch (generalError) {
+        console.error('FATAL LIVE ERROR:', generalError.message);
+        res.status(500).json({ error: 'Error interno del servidor', message: generalError.message });
     }
 });
 
 // Endpoint para reiniciar el contador (Reset Manual)
 router.post('/live/reset', async (req, res) => {
     try {
-        const response = await axios.get('http://192.168.48.183:8050/data', { timeout: 3000 });
+        const response = await axios.get('http://192.168.48.183:8050/data', { timeout: 10000 });
         const currentTotal = response.data.llamadas_ingresadas || 0;
         const currentAbandoned = response.data.abandonadas_total || 0;
 
@@ -493,12 +450,21 @@ router.delete('/reports/attendance', async (req, res) => {
     try {
         const { startDate, endDate, poolId } = req.query;
         const where = {};
+        
         if (startDate && endDate) {
             where.fecha = { [Op.between]: [startDate, endDate] };
         }
         if (poolId) where.campanaId = poolId;
 
-        const deletedCount = await Asistencia.destroy({ where });
+        let deletedCount;
+        // Si no hay filtros, borrar TODO (truncate para mayor velocidad)
+        if (Object.keys(where).length === 0) {
+            await Asistencia.destroy({ where: {}, truncate: true });
+            deletedCount = 'todos';
+        } else {
+            deletedCount = await Asistencia.destroy({ where });
+        }
+        
         res.json({ success: true, deletedCount });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -574,9 +540,18 @@ router.get('/reports/compliance', async (req, res) => {
 router.get('/reports/attendance', async (req, res) => {
     try {
         const { startDate, endDate, poolId } = req.query;
+        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+
+        // Si consultamos hoy (y no es una fecha histórica de largo plazo), sincronizamos primero
+        if (!startDate || startDate === today) {
+            await syncAttendanceFromCentral(today);
+        }
+
         const where = {};
         if (startDate && endDate) {
             where.fecha = { [Op.between]: [startDate, endDate] };
+        } else {
+            where.fecha = today;
         }
         if (poolId) where.campanaId = poolId;
 
@@ -590,12 +565,150 @@ router.get('/reports/attendance', async (req, res) => {
     }
 });
 
+// Función Maestra de Sincronización (Solo se llama bajod demanda)
+async function syncAttendanceFromCentral(targetDate) {
+    try {
+        const allAgents = await Agente.findAll();
+        const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+        // 1. Obtener TODOS los registros de productividad de hoy desde la VM
+        let productivityData = [];
+        try {
+            const prodConn = await mysql.createConnection({
+                host: '192.168.50.33',
+                user: 'cyberhub',
+                password: 'masterC1berHUb#',
+                database: 'cyber_ideas_hub'
+            });
+            // Filtro por FechaCaptura para asegurar que procesamos solo lo de hoy
+            const [rows] = await prodConn.execute(
+                'SELECT numero_agente, nombre_agente, tiempo_logueado, FechaCaptura FROM reporteProductividad WHERE DATE(FechaCaptura) = ? AND tiempo_logueado > "00:00:00" ORDER BY id DESC',
+                [targetDate]
+            );
+            productivityData = rows;
+            await prodConn.end();
+        } catch (err) {
+            console.error('Sync Database error:', err.message);
+        }
+
+        if (productivityData.length === 0) return;
+
+        // 2. Filtrar ya grabados para hoy
+        const existingEntries = await Asistencia.findAll({ where: { fecha: targetDate } });
+        const recordedNames = new Set(existingEntries.map(a => a.nombreAgente));
+
+        const nowTime = new Date().toLocaleTimeString('es-MX', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+        for (const agent of allAgents) {
+            // Intentar emparejar por número de agente numéricamente (evita problemas de ceros a la izquierda)
+            let prodRow = productivityData.find(p => Number(p.numero_agente) === Number(agent.numero_agente));
+            
+            if (!prodRow) {
+                const localTokens = normalize(agent.nombre).split(/\s+/).filter(t => t.length > 2 || t.length === 1); 
+                
+                let bestMatch = null;
+                let maxMatches = 0;
+
+                for (const p of productivityData) {
+                    const prodTokens = normalize(p.nombre_agente).split(/[\s\.]+/).filter(t => t.length > 2 || t.length === 1);
+                    const matchCount = prodTokens.filter(pt => localTokens.includes(pt)).length;
+                    
+                    if (matchCount > maxMatches) {
+                        maxMatches = matchCount;
+                        bestMatch = p;
+                    }
+                }
+                
+                if (maxMatches >= 1) {
+                    prodRow = bestMatch;
+                }
+            }
+
+            let officialLoginTime = agent.horaEntradaProgramada; // Asumir a tiempo si no hay datos
+            let delayMinutos = 0;
+            let loggedTimeStr = null;
+
+            if (prodRow && prodRow.tiempo_logueado) {
+                loggedTimeStr = prodRow.tiempo_logueado;
+                const [h, m, s] = prodRow.tiempo_logueado.split(':').map(Number);
+                const totalSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+                
+                // CÁLCULO MATEMÁTICO: Hora Actual de la app - Tiempo Logueado de CCPulse
+                const loginDate = new Date(Date.now() - totalSeconds * 1000);
+
+                officialLoginTime = loginDate.toLocaleTimeString('es-MX', {
+                    timeZone: 'America/Mexico_City',
+                    hour12: false,
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                const [sH, sM] = agent.horaEntradaProgramada.split(':').map(Number);
+                const loginMx = new Date(loginDate.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+                delayMinutos = Math.max(0, (loginMx.getHours() * 60 + loginMx.getMinutes()) - (sH * 60 + sM));
+            }
+
+            const config = await Configuracion.findOne();
+            const tolerance = config?.toleranciaRetardoMinutos || 5;
+            const tmo = config?.tmoMinutos || 11.5;
+
+            const existingEntry = existingEntries.find(e => e.nombreAgente === agent.nombre);
+
+            let estatusAsistencia = delayMinutos > tolerance ? 'Retardo' : 'A Tiempo';
+            let impacto = delayMinutos === 0 ? 0 : Math.round(delayMinutos / tmo);
+
+            if (!loggedTimeStr) {
+                estatusAsistencia = 'Ausente';
+                delayMinutos = 0;
+                impacto = 0;
+                officialLoginTime = agent.horaEntradaProgramada;
+            }
+
+            if (existingEntry) {
+                // Si el agente ya existe y el CyberHub le trajo un tiempo logueado mayor, lo actualizamos.
+                // Si CyberHub no trajo (prodRow no existe), mantenemos el que teníamos.
+                if (loggedTimeStr) {
+                    await existingEntry.update({
+                        tiempoLogueado: loggedTimeStr
+                    });
+                }
+            } else if (!recordedNames.has(agent.nombre)) {
+                // Crear nuevo registro para TODA la plantilla (estén o no en CyberHub)
+                await Asistencia.create({
+                    id: require('crypto').randomUUID(),
+                    nombreAgente: agent.nombre,
+                    fecha: targetDate,
+                    horaEntradaProgramada: agent.horaEntradaProgramada,
+                    horaEntradaReal: officialLoginTime,
+                    tiempoLogueado: loggedTimeStr,
+                    minutosRetardo: delayMinutos,
+                    impactoLlamadas: impacto,
+                    estatusAsistencia: estatusAsistencia,
+                    campanaId: agent.campanaId
+                });
+                recordedNames.add(agent.nombre);
+            }
+        }
+    } catch (e) {
+        console.error('Full Sync Failed:', e.message);
+    }
+}
+
 router.get('/reports/attendance/export', async (req, res) => {
     try {
         const { startDate, endDate, poolId } = req.query;
+        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+
+        // Sincronizar si es reporte de hoy
+        if (!startDate || startDate === today) {
+            await syncAttendanceFromCentral(today);
+        }
+
         const where = {};
         if (startDate && endDate) {
             where.fecha = { [Op.between]: [startDate, endDate] };
+        } else {
+            where.fecha = today;
         }
         if (poolId) where.campanaId = poolId;
 
@@ -604,13 +717,15 @@ router.get('/reports/attendance/export', async (req, res) => {
             order: [['fecha', 'ASC'], ['nombreAgente', 'ASC']]
         });
 
-        const data = attendance.map(a => ({
-            'Fecha': a.fecha,
+        const validAttendance = attendance.filter(a => a.estatusAsistencia !== 'Ausente');
+
+        const data = validAttendance.map(a => ({
             'Agente': a.nombreAgente,
-            'Horario Programado': a.horaEntradaProgramada,
-            'Hora Entrada Real': a.horaEntradaReal,
-            'Retardo (min)': a.minutosRetardo,
-            'Impacto (Llamadas)': a.impactoLlamadas || 0,
+            'Entrada Programada': a.horaEntradaProgramada,
+            'Entrada Real': a.horaEntradaReal,
+            'Tiempo Logueado': a.tiempoLogueado || '-',
+            'Minutos Retardo': a.minutosRetardo,
+            'Impacto (Llamadas)': a.impactoLlamadas > 0 ? `-${a.impactoLlamadas}` : '0',
             'Estatus': a.estatusAsistencia === 'Retardo' ? 'RETARDO' : 'A TIEMPO'
         }));
 

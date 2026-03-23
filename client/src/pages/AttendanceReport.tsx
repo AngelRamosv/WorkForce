@@ -20,9 +20,11 @@ const AttendanceReport: React.FC = () => {
         try {
             const poolsRes = await api.get('/pools');
             setPools(poolsRes.data);
-            fetchReport();
+            // NO auto-cargamos el reporte aqui. El usuario debe dar clic en "Consultar"
+            setLoading(false);
         } catch (error) {
             console.error('Error fetching pools', error);
+            setLoading(false);
         }
     };
 
@@ -72,7 +74,8 @@ const AttendanceReport: React.FC = () => {
     };
 
     const handleClearPeriod = async () => {
-        const msg = `¡ATENCIÓN! Se eliminarán TODOS los registros del periodo ${filters.startDate} al ${filters.endDate}. ¿Deseas continuar?`;
+        const formatDate = (dateStr: string) => dateStr.split('-').reverse().join('/');
+        const msg = `¡ATENCIÓN! Se eliminarán TODOS los registros del periodo ${formatDate(filters.startDate)} al ${formatDate(filters.endDate)}. ¿Deseas continuar?`;
         if (!window.confirm(msg)) return;
 
         try {
@@ -82,7 +85,7 @@ const AttendanceReport: React.FC = () => {
             if (filters.poolId) params.append('poolId', filters.poolId);
 
             await api.delete(`/reports/attendance?${params.toString()}`);
-            fetchReport();
+            setAttendance([]); // Limpiar la tabla visualmente
             alert('Periodo limpiado correctamente');
         } catch (error) {
             console.error('Error clearing period', error);
@@ -102,21 +105,36 @@ const AttendanceReport: React.FC = () => {
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200">
-                        <Filter size={16} className="text-gray-400" />
-                        <input 
-                            type="date" 
-                            className="bg-transparent border-none text-xs font-bold focus:ring-0"
-                            value={filters.startDate}
-                            onChange={(e) => setFilters({...filters, startDate: e.target.value})}
-                        />
-                        <span className="text-gray-300">|</span>
-                        <input 
-                            type="date" 
-                            className="bg-transparent border-none text-xs font-bold focus:ring-0"
-                            value={filters.endDate}
-                            onChange={(e) => setFilters({...filters, endDate: e.target.value})}
-                        />
+                    <div className="flex items-center gap-1 bg-gray-50 p-2 rounded-xl border border-gray-200">
+                        <Filter size={16} className="text-gray-400 mr-1" />
+                        
+                        {/* Fecha Inicio (Ghost Picker) */}
+                        <div className="relative group/picker cursor-pointer flex items-center h-8 px-2 hover:bg-white rounded-lg transition-colors">
+                            <span className="text-sm font-black text-gray-800 pointer-events-none">
+                                {filters.startDate.split('-').reverse().join('/')}
+                            </span>
+                            <input 
+                                type="date" 
+                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                value={filters.startDate}
+                                onChange={(e) => setFilters({...filters, startDate: e.target.value})}
+                            />
+                        </div>
+
+                        <span className="text-gray-300 mx-1">|</span>
+
+                        {/* Fecha Fin (Ghost Picker) */}
+                        <div className="relative group/picker cursor-pointer flex items-center h-8 px-2 hover:bg-white rounded-lg transition-colors">
+                            <span className="text-sm font-black text-gray-800 pointer-events-none">
+                                {filters.endDate.split('-').reverse().join('/')}
+                            </span>
+                            <input 
+                                type="date" 
+                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                value={filters.endDate}
+                                onChange={(e) => setFilters({...filters, endDate: e.target.value})}
+                            />
+                        </div>
                     </div>
                     
                     <select 
@@ -182,7 +200,7 @@ const AttendanceReport: React.FC = () => {
                             attendance.map((row) => (
                                 <tr key={row.id} className="hover:bg-gray-50/30 transition-colors group">
                                     <td className="px-6 py-4 text-center text-xs font-mono font-bold text-gray-500">
-                                        {row.fecha}
+                                        {row.fecha.split('-').reverse().join('/')}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-2">
@@ -206,16 +224,28 @@ const AttendanceReport: React.FC = () => {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-center">
-                                        {row.minutosRetardo > 0 ? (
+                                        {row.estatusAsistencia === 'Ausente' ? (
+                                            <span className="text-xs font-bold text-gray-400 bg-gray-50 border border-gray-200 px-2 py-1 rounded-lg shadow-sm">
+                                                0 LLAM
+                                            </span>
+                                        ) : row.impactoLlamadas > 0 || row.minutosRetardo > 0 ? (
                                             <span className="text-xs font-black text-rose-500 bg-rose-50 px-2 py-1 rounded-lg">
-                                                -{row.impactoLlamadas} LLAM
+                                                -{row.impactoLlamadas || 0} LLAM
+                                            </span>
+                                        ) : row.impactoLlamadas === 0 || row.minutosRetardo === 0 ? (
+                                            <span className="text-xs font-black text-purple-600 bg-purple-50 border border-purple-200 px-2 py-1 rounded-lg shadow-sm">
+                                                0 LLAM
                                             </span>
                                         ) : (
                                             <span className="text-xs text-gray-300">-</span>
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-center">
-                                        {row.estatusAsistencia === 'Retardo' ? (
+                                        {row.estatusAsistencia === 'Ausente' ? (
+                                            <div className="inline-flex items-center gap-1.5 bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ring-1 ring-inset ring-gray-300">
+                                                Ausente
+                                            </div>
+                                        ) : row.estatusAsistencia === 'Retardo' ? (
                                             <div className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ring-1 ring-inset ring-rose-200">
                                                 <AlertCircle size={10} />
                                                 Retardo
@@ -249,7 +279,7 @@ const AttendanceReport: React.FC = () => {
                     <span className="flex items-center gap-1 text-emerald-500"><UserCheck size={12}/> Puntuales: {attendance.filter(a => a.estatusAsistencia === 'A Tiempo').length}</span>
                     <span className="flex items-center gap-1 text-rose-500"><AlertCircle size={12}/> Retardos: {attendance.filter(a => a.estatusAsistencia === 'Retardo').length}</span>
                     <span className="flex items-center gap-1 text-amber-500 font-black">
-                        <Clock size={12}/> Impacto Total: -{attendance.reduce((sum, a) => sum + (a.impactoLlamadas || 0), 0)} LLAM
+                        <Clock size={12}/> Impacto Total: -{attendance.filter(a => a.horaEntradaProgramada !== '23:00').reduce((sum, a) => sum + (a.impactoLlamadas || 0), 0)} LLAM
                     </span>
                 </div>
             </div>

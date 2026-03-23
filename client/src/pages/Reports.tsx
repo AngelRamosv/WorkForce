@@ -35,8 +35,8 @@ const Reports: React.FC = () => {
         if (reports.length === 0) return;
 
         const headers = ["Fecha", "Campaña", "Staff Planeado", "Staff Real", "Cumplimiento (%)", "Llamadas Recibidas", "Abandonos", "Nivel de Servicio (%)"];
-        const rows = reports.map(r => [
-            r.date,
+        const rows = reports.map((r: any) => [
+            r.date.split('-').reverse().join('/'),
             r.poolName,
             r.plannedAgents,
             r.activeAgents,
@@ -48,7 +48,7 @@ const Reports: React.FC = () => {
 
         const csvContent = [
             headers.join(","),
-            ...rows.map(row => row.join(','))
+            ...rows.map((row: any) => row.join(','))
         ].join("\n");
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -109,11 +109,11 @@ const Reports: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {reports.map((report, idx) => (
+                            {reports.map((report: any, idx: number) => (
                                 <tr key={idx} className="hover:bg-gray-50/50 transition-colors group">
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <p className="text-sm font-bold text-gray-700">
-                                            {report.date}
+                                            {report.date.split('-').reverse().join('/')}
                                         </p>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
