@@ -418,24 +418,15 @@ async function syncAttendanceFromCentral(targetDate) {
         const existingEntries = await Asistencia.findAll({ where: { fecha: targetDate } });
         const recordedNames = new Set(existingEntries.map(a => a.nombreAgente));
 
-        // Determinar Punto de ReferenciaTemporal (El "Reloj Inteligente")
-        const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
-        const nowMx = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
-        const limitHour = 18; // 6:00 PM
-        
-        let referenceTimestamp;
-        if (targetDate < todayStr || nowMx.getHours() >= limitHour) {
-            // Si es un día pasado o ya pasaron de las 6 PM hoy, usamos las 6 PM como base estable
-            const base = new Date(targetDate + 'T18:00:00');
-            referenceTimestamp = base.getTime();
-        } else {
-            // Si estamos dentro del turno de hoy, usamos la hora real de ahorita
-            referenceTimestamp = Date.now();
-        }
-
+        // Obtener configuración global (turno horas y tolerancia)
         const config = await Configuracion.findOne();
         const tolerance = config?.toleranciaRetardoMinutos || 5;
         const tmo = config?.tmoMinutos || 11.5;
+        const horasTurno = config?.horasTurno || 8;
+
+        // Datos de "hoy" para el Reloj Inteligente
+        const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+        const nowMx = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
 
         for (const agent of allAgents) {
             let prodRow = productivityData.find(p => Number(p.numero_agente) === Number(agent.numero_agente));
@@ -462,10 +453,28 @@ async function syncAttendanceFromCentral(targetDate) {
                 loggedTimeStr = prodRow.tiempo_logueado;
                 const [h, m, s] = prodRow.tiempo_logueado.split(':').map(Number);
                 const totalSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
-                
-                // Restar el tiempo trabajado del punto de referencia
-                const loginDate = new Date(referenceTimestamp - totalSeconds * 1000);
 
+                // --- RELOJ INTELIGENTE POR TURNO ---
+                // Calcula la hora de salida estimada de ESTE agente: entrada + horasTurno
+                const [entH, entM] = (agent.horaEntradaProgramada || '09:00').split(':').map(Number);
+                const salidaHora = entH + horasTurno;  // Ej: 9 + 8 = 17 (Matutino), 12 + 8 = 20 (Vespertino)
+                
+                let referenceTimestamp;
+                const isToday = targetDate === todayStr;
+                const currentMinutes = nowMx.getHours() * 60 + nowMx.getMinutes();
+                const exitMinutes = salidaHora * 60 + entM;
+
+                if (!isToday || currentMinutes >= exitMinutes) {
+                    // Día pasado O ya pasó la hora de salida del turno → usar salida estimada como referencia fija
+                    const base = new Date(`${targetDate}T${String(salidaHora).padStart(2,'0')}:${String(entM).padStart(2,'0')}:00`);
+                    referenceTimestamp = base.getTime();
+                } else {
+                    // Dentro del turno activo → usar hora actual (Modo en vivo)
+                    referenceTimestamp = Date.now();
+                }
+
+                // Calcular hora de entrada real restando tiempo trabajado del punto de referencia
+                const loginDate = new Date(referenceTimestamp - totalSeconds * 1000);
                 officialLoginTime = loginDate.toLocaleTimeString('es-MX', {
                     timeZone: 'America/Mexico_City', hour12: false, hour: '2-digit', minute: '2-digit'
                 });
@@ -473,7 +482,7 @@ async function syncAttendanceFromCentral(targetDate) {
                 const [sH, sM] = agent.horaEntradaProgramada.split(':').map(Number);
                 const [lH, lM] = officialLoginTime.split(':').map(Number);
                 
-                // REGLA: Sustraer tolerancia del retardo total
+                // Sustraer tolerancia del retardo
                 delayMinutos = Math.max(0, (lH * 60 + lM) - (sH * 60 + sM) - tolerance);
             }
 
@@ -482,14 +491,42 @@ async function syncAttendanceFromCentral(targetDate) {
             let impacto = delayMinutos === 0 ? 0 : Math.round(delayMinutos / tmo);
 
             if (!prodRow) {
-                estatusAsistencia = 'Ausente';
-                impacto = 8;
-                officialLoginTime = '09:00';
+                // Verificar si el turno del agente ya debería haber comenzado
+                const [entH, entM] = (agent.horaEntradaProgramada || '09:00').split(':').map(Number);
+                const scheduledMinutes = entH * 60 + entM;
+                const currentMinutes = nowMx.getHours() * 60 + nowMx.getMinutes();
+                const isToday = targetDate === todayStr;
+
+                if (isToday && currentMinutes < scheduledMinutes) {
+                    // El turno aún no ha comenzado → "Por Ingresar" (no es Ausente real)
+                    estatusAsistencia = 'Por Ingresar';
+                    impacto = 0;
+                } else {
+                    // El turno ya debería haber comenzado y no hay datos → Ausente real
+                    estatusAsistencia = 'Ausente';
+                    impacto = 8;
+                }
+                officialLoginTime = agent.horaEntradaProgramada || '09:00';
                 delayMinutos = 0;
             }
 
             if (existingEntry) {
-                if (loggedTimeStr) await existingEntry.update({ tiempoLogueado: loggedTimeStr });
+                const esPendiente = existingEntry.estatusAsistencia === 'Por Ingresar';
+                const esAusenteRescatable = existingEntry.estatusAsistencia === 'Ausente' && loggedTimeStr;
+
+                if (esPendiente || esAusenteRescatable) {
+                    // Rescatar: el agente ya tiene datos en CyberHub → actualizar todo el registro
+                    await existingEntry.update({
+                        horaEntradaReal: officialLoginTime,
+                        minutosRetardo: delayMinutos,
+                        impactoLlamadas: impacto,
+                        estatusAsistencia: estatusAsistencia,
+                        tiempoLogueado: loggedTimeStr || existingEntry.tiempoLogueado
+                    });
+                } else if (loggedTimeStr) {
+                    // Ya tiene hora real congelada → solo actualizar tiempo logueado
+                    await existingEntry.update({ tiempoLogueado: loggedTimeStr });
+                }
             } else if (!recordedNames.has(agent.nombre)) {
                 await Asistencia.create({
                     fecha: targetDate,
@@ -504,9 +541,11 @@ async function syncAttendanceFromCentral(targetDate) {
                 });
             }
         }
+
     } catch (err) {
         console.error('Core sync error:', err.message);
     }
 }
+
 
 module.exports = router;
