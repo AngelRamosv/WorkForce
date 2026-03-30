@@ -15,6 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const mysql = require('mysql2/promise');
 const { Op } = require('sequelize');
+const sequelize = require('../database');
 
 // --- CAMPAÑAS & CONFIGURACIÓN ---
 router.get('/pools', async (req, res) => {
@@ -296,6 +297,8 @@ router.get('/reports/attendance', async (req, res) => {
 
         if (!startDate || startDate === today) {
             await syncAttendanceFromCentral(today);
+        } else if (startDate === endDate) {
+            await syncAttendanceFromCentral(startDate);
         }
 
         const where = {};
@@ -309,9 +312,10 @@ router.get('/reports/attendance', async (req, res) => {
         const attendance = await Asistencia.findAll({
             where,
             order: [
-                ['fecha', 'DESC'], 
-                ['horaEntradaProgramada', 'ASC'], 
-                ['nombreAgente', 'ASC']
+                ['fecha', 'DESC'],
+                // Los Ausentes van al final ABSOLUTO, después de todos los presentes
+                [sequelize.literal("CASE WHEN estatusAsistencia = 'Ausente' THEN 1 ELSE 0 END"), 'ASC'],
+                ['horaEntradaReal', 'ASC']
             ]
         });
         res.json(attendance);
@@ -323,6 +327,14 @@ router.get('/reports/attendance', async (req, res) => {
 router.get('/reports/attendance/export', async (req, res) => {
     try {
         const { startDate, endDate, poolId } = req.query;
+        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+
+        if (!startDate || startDate === today) {
+            await syncAttendanceFromCentral(today);
+        } else if (startDate === endDate) {
+            await syncAttendanceFromCentral(startDate);
+        }
+
         const where = {};
         if (startDate && endDate) {
             where.fecha = { [Op.between]: [startDate, endDate] };
@@ -332,9 +344,9 @@ router.get('/reports/attendance/export', async (req, res) => {
         const attendance = await Asistencia.findAll({
             where,
             order: [
-                ['fecha', 'ASC'], 
-                ['horaEntradaProgramada', 'ASC'], 
-                ['nombreAgente', 'ASC']
+                ['fecha', 'ASC'],
+                [sequelize.literal("CASE WHEN estatusAsistencia = 'Ausente' THEN 1 ELSE 0 END"), 'ASC'],
+                ['horaEntradaReal', 'ASC']
             ]
         });
 
@@ -377,7 +389,10 @@ router.delete('/reports/attendance', async (req, res) => {
 // Función Maestra de Sincronización
 async function syncAttendanceFromCentral(targetDate) {
     try {
-        const allAgents = await Agente.findAll();
+        // REGLA: No tocamos agentes nocturnos
+        const allAgents = await Agente.findAll({
+            where: { turno: { [Op.in]: ['Matutino', 'Vespertino'] } }
+        });
         const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
         let productivityData = [];
@@ -402,6 +417,25 @@ async function syncAttendanceFromCentral(targetDate) {
 
         const existingEntries = await Asistencia.findAll({ where: { fecha: targetDate } });
         const recordedNames = new Set(existingEntries.map(a => a.nombreAgente));
+
+        // Determinar Punto de ReferenciaTemporal (El "Reloj Inteligente")
+        const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+        const nowMx = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+        const limitHour = 18; // 6:00 PM
+        
+        let referenceTimestamp;
+        if (targetDate < todayStr || nowMx.getHours() >= limitHour) {
+            // Si es un día pasado o ya pasaron de las 6 PM hoy, usamos las 6 PM como base estable
+            const base = new Date(targetDate + 'T18:00:00');
+            referenceTimestamp = base.getTime();
+        } else {
+            // Si estamos dentro del turno de hoy, usamos la hora real de ahorita
+            referenceTimestamp = Date.now();
+        }
+
+        const config = await Configuracion.findOne();
+        const tolerance = config?.toleranciaRetardoMinutos || 5;
+        const tmo = config?.tmoMinutos || 11.5;
 
         for (const agent of allAgents) {
             let prodRow = productivityData.find(p => Number(p.numero_agente) === Number(agent.numero_agente));
@@ -428,74 +462,51 @@ async function syncAttendanceFromCentral(targetDate) {
                 loggedTimeStr = prodRow.tiempo_logueado;
                 const [h, m, s] = prodRow.tiempo_logueado.split(':').map(Number);
                 const totalSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
-                const loginDate = new Date(Date.now() - totalSeconds * 1000);
+                
+                // Restar el tiempo trabajado del punto de referencia
+                const loginDate = new Date(referenceTimestamp - totalSeconds * 1000);
 
                 officialLoginTime = loginDate.toLocaleTimeString('es-MX', {
                     timeZone: 'America/Mexico_City', hour12: false, hour: '2-digit', minute: '2-digit'
                 });
 
                 const [sH, sM] = agent.horaEntradaProgramada.split(':').map(Number);
-                const loginMx = new Date(loginDate.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
-                delayMinutos = Math.max(0, (loginMx.getHours() * 60 + loginMx.getMinutes()) - (sH * 60 + sM));
+                const [lH, lM] = officialLoginTime.split(':').map(Number);
+                
+                // REGLA: Sustraer tolerancia del retardo total
+                delayMinutos = Math.max(0, (lH * 60 + lM) - (sH * 60 + sM) - tolerance);
             }
 
-            const config = await Configuracion.findOne();
-            const tolerance = config?.toleranciaRetardoMinutos || 5;
-            const tmo = config?.tmoMinutos || 11.5;
-
             const existingEntry = existingEntries.find(e => e.nombreAgente === agent.nombre);
-            let estatusAsistencia = delayMinutos > tolerance ? 'Retardo' : 'A Tiempo';
+            let estatusAsistencia = delayMinutos > 0 ? 'Retardo' : 'A Tiempo';
             let impacto = delayMinutos === 0 ? 0 : Math.round(delayMinutos / tmo);
 
-            if (!loggedTimeStr) {
+            if (!prodRow) {
                 estatusAsistencia = 'Ausente';
+                impacto = 8;
+                officialLoginTime = '09:00';
                 delayMinutos = 0;
-                impacto = 0;
-                officialLoginTime = agent.horaEntradaProgramada;
             }
 
             if (existingEntry) {
                 if (loggedTimeStr) await existingEntry.update({ tiempoLogueado: loggedTimeStr });
             } else if (!recordedNames.has(agent.nombre)) {
                 await Asistencia.create({
-                    nombreAgente: agent.nombre,
                     fecha: targetDate,
+                    nombreAgente: agent.nombre,
+                    campanaId: agent.campanaId,
                     horaEntradaProgramada: agent.horaEntradaProgramada,
                     horaEntradaReal: officialLoginTime,
-                    tiempoLogueado: loggedTimeStr,
                     minutosRetardo: delayMinutos,
                     impactoLlamadas: impacto,
                     estatusAsistencia: estatusAsistencia,
-                    campanaId: agent.campanaId
+                    tiempoLogueado: loggedTimeStr || '00:00:00'
                 });
-                recordedNames.add(agent.nombre);
             }
         }
-    } catch (e) {
-        console.error('Sync Error:', e.message);
+    } catch (err) {
+        console.error('Core sync error:', err.message);
     }
 }
-
-router.post('/reports/migrate-history', async (req, res) => {
-    let externalConn;
-    try {
-        const { startDate, endDate } = req.body;
-        externalConn = await mysql.createConnection({
-            host: '192.168.50.33', user: 'cyberhub', password: 'masterC1berHUb#', database: 'cyber_ideas_hub'
-        });
-        const [rows] = await externalConn.execute(`
-            SELECT a.personal_id, a.fecha_asistencia, MIN(a.created_at) as first_login, p.personal_nombre 
-            FROM asistencias a 
-            JOIN personal p ON a.personal_id = p.personal_id 
-            WHERE a.fecha_asistencia BETWEEN ? AND ?
-            GROUP BY a.personal_id, a.fecha_asistencia
-        `, [startDate, endDate]);
-        res.json({ success: true, count: rows.length });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    } finally {
-        if (externalConn) await externalConn.end();
-    }
-});
 
 module.exports = router;
