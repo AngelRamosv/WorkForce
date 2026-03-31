@@ -292,13 +292,13 @@ router.delete('/plans/:id', async (req, res) => {
 // --- REPORTES / ASISTENCIA ---
 router.get('/reports/attendance', async (req, res) => {
     try {
-        const { startDate, endDate, poolId } = req.query;
+        const { startDate, endDate, poolId, turno } = req.query;
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+        const targetDate = startDate || today;
 
-        if (!startDate || startDate === today) {
-            await syncAttendanceFromCentral(today);
-        } else if (startDate === endDate) {
-            await syncAttendanceFromCentral(startDate);
+        // 'todos' solo muestra datos congelados, no sincroniza
+        if (turno !== 'todos') {
+            await syncAttendanceFromCentral(targetDate, turno || '');
         }
 
         const where = {};
@@ -309,12 +309,20 @@ router.get('/reports/attendance', async (req, res) => {
         }
         if (poolId) where.campanaId = poolId;
 
+        // Filtrar por turno para la visualización
+        if (turno === 'matutino') {
+            where.horaEntradaProgramada = '09:00';
+        } else if (turno === 'vespertino') {
+            where.horaEntradaProgramada = '12:00';
+        } else if (turno === 'ausentes') {
+            where.estatusAsistencia = { [Op.in]: ['Ausente', 'Por Ingresar'] };
+        }
+
         const attendance = await Asistencia.findAll({
             where,
             order: [
                 ['fecha', 'DESC'],
-                // Los Ausentes van al final ABSOLUTO, después de todos los presentes
-                [sequelize.literal("CASE WHEN estatusAsistencia = 'Ausente' THEN 1 ELSE 0 END"), 'ASC'],
+                [sequelize.literal("CASE WHEN estatusAsistencia = 'Ausente' THEN 1 WHEN estatusAsistencia = 'Por Ingresar' THEN 2 ELSE 0 END"), 'ASC'],
                 ['horaEntradaReal', 'ASC']
             ]
         });
@@ -387,12 +395,21 @@ router.delete('/reports/attendance', async (req, res) => {
 });
 
 // Función Maestra de Sincronización
-async function syncAttendanceFromCentral(targetDate) {
+// turno: '' = todos, 'matutino', 'vespertino', 'ausentes'
+async function syncAttendanceFromCentral(targetDate, turno = '') {
     try {
         // REGLA: No tocamos agentes nocturnos
-        const allAgents = await Agente.findAll({
+        let allAgents = await Agente.findAll({
             where: { turno: { [Op.in]: ['Matutino', 'Vespertino'] } }
         });
+
+        // Filtrar agentes por turno seleccionado
+        if (turno === 'matutino') {
+            allAgents = allAgents.filter(a => a.horaEntradaProgramada === '09:00');
+        } else if (turno === 'vespertino') {
+            allAgents = allAgents.filter(a => a.horaEntradaProgramada === '12:00');
+        }
+        // 'ausentes' y '' procesan todos los agentes
         const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
         let productivityData = [];
@@ -413,7 +430,8 @@ async function syncAttendanceFromCentral(targetDate) {
             console.error('Remote DB Error:', err.message);
         }
 
-        if (productivityData.length === 0) return;
+        // Para 'ausentes': aunque no haya datos en CyberHub, procesamos la ausencia
+        if (productivityData.length === 0 && turno !== 'ausentes') return;
 
         const existingEntries = await Asistencia.findAll({ where: { fecha: targetDate } });
         const recordedNames = new Set(existingEntries.map(a => a.nombreAgente));
@@ -424,9 +442,10 @@ async function syncAttendanceFromCentral(targetDate) {
         const tmo = config?.tmoMinutos || 11.5;
         const horasTurno = config?.horasTurno || 8;
 
-        // Datos de "hoy" para el Reloj Inteligente
+        // Datos de tiempo actual en México
         const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
         const nowMx = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+        const nowMinutes = nowMx.getHours() * 60 + nowMx.getMinutes();
 
         for (const agent of allAgents) {
             let prodRow = productivityData.find(p => Number(p.numero_agente) === Number(agent.numero_agente));
@@ -445,6 +464,16 @@ async function syncAttendanceFromCentral(targetDate) {
                 if (maxMatches < 1) prodRow = null;
             }
 
+            // Para turno 'ausentes': si el agente tiene datos, lo saltamos (ya fue procesado)
+            if (turno === 'ausentes' && prodRow) continue;
+
+            // Para turno 'ausentes' sin datos: verificar si el turno ya debería haber empezado
+            if (turno === 'ausentes' && !prodRow) {
+                const [entH] = (agent.horaEntradaProgramada || '09:00').split(':').map(Number);
+                const isToday = targetDate === todayStr;
+                if (isToday && nowMinutes < entH * 60) continue; // Turno aún no empieza
+            }
+
             let officialLoginTime = agent.horaEntradaProgramada;
             let delayMinutos = 0;
             let loggedTimeStr = null;
@@ -457,21 +486,13 @@ async function syncAttendanceFromCentral(targetDate) {
                 // --- RELOJ INTELIGENTE POR TURNO ---
                 // Calcula la hora de salida estimada de ESTE agente: entrada + horasTurno
                 const [entH, entM] = (agent.horaEntradaProgramada || '09:00').split(':').map(Number);
-                const salidaHora = entH + horasTurno;  // Ej: 9 + 8 = 17 (Matutino), 12 + 8 = 20 (Vespertino)
+                // Turno real = horasTurno + 1h (ej: 9:00-18:00 = 9h, 12:00-21:00 = 9h)
+                const salidaHora = entH + horasTurno + 1;
                 
-                let referenceTimestamp;
+                // Siempre usar hora actual como referencia (da 8:57, 9:03, 9:15...)
+                // Para días pasados, usar la hora de salida del turno como punto fijo
                 const isToday = targetDate === todayStr;
-                const currentMinutes = nowMx.getHours() * 60 + nowMx.getMinutes();
-                const exitMinutes = salidaHora * 60 + entM;
-
-                if (!isToday || currentMinutes >= exitMinutes) {
-                    // Día pasado O ya pasó la hora de salida del turno → usar salida estimada como referencia fija
-                    const base = new Date(`${targetDate}T${String(salidaHora).padStart(2,'0')}:${String(entM).padStart(2,'0')}:00`);
-                    referenceTimestamp = base.getTime();
-                } else {
-                    // Dentro del turno activo → usar hora actual (Modo en vivo)
-                    referenceTimestamp = Date.now();
-                }
+                const referenceTimestamp = isToday ? Date.now() : new Date(`${targetDate}T${String(salidaHora).padStart(2,'0')}:${String(entM).padStart(2,'0')}:00`).getTime();
 
                 // Calcular hora de entrada real restando tiempo trabajado del punto de referencia
                 const loginDate = new Date(referenceTimestamp - totalSeconds * 1000);
@@ -481,7 +502,7 @@ async function syncAttendanceFromCentral(targetDate) {
 
                 const [sH, sM] = agent.horaEntradaProgramada.split(':').map(Number);
                 const [lH, lM] = officialLoginTime.split(':').map(Number);
-                
+
                 // Sustraer tolerancia del retardo
                 delayMinutos = Math.max(0, (lH * 60 + lM) - (sH * 60 + sM) - tolerance);
             }
