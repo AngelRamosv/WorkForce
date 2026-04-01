@@ -27,10 +27,12 @@ const AttendanceReport: React.FC = () => {
 
     const todayMex = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
     const isToday = date === todayMex;
+    const isPast = date < todayMex;
     const nowMinutes = nowMex.getHours() * 60 + nowMex.getMinutes();
 
     const turnoInfo = TURNO_OPTIONS.find(t => t.value === turno)!;
-    const canConsult = !isToday || nowMinutes >= turnoInfo.minHour * 60;
+    // REGLA: Permitir si es pasado O si es hoy y ya pasó la hora del turno (Bloquea futuro)
+    const canConsult = isPast || (isToday && nowMinutes >= turnoInfo.minHour * 60);
 
     useEffect(() => {
         api.get('/pools').then(r => setPools(r.data)).catch(() => {});
