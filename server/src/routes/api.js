@@ -506,18 +506,20 @@ async function syncAttendanceFromCentral(targetDate, turno = 'todos') {
                 const loginDate = new Date(referenceTimestamp - totalSeconds * 1000);
                 
                 // --- MATEMÁTICA PURA (SIN TEXTO) PARA EVITAR NaN ---
-                let loginH = loginDate.getHours();
-                let loginM = loginDate.getMinutes();
-                let loginTotalMin = loginH * 60 + loginM;
+                let loginH = (loginDate instanceof Date && !isNaN(loginDate)) ? loginDate.getHours() : 9;
+                let loginM = (loginDate instanceof Date && !isNaN(loginDate)) ? loginDate.getMinutes() : 0;
+                let loginTotalMin = (loginH * 60) + loginM;
 
-                const [sH, sM] = (agent.horaEntradaProgramada || '09:00').split(':').map(Number);
-                const scheduledTotalMin = sH * 60 + sM;
+                const [sH, sM] = (agent.horaEntradaProgramada || '09:00').split(':').map(n => parseInt(n) || 0);
+                const scheduledTotalMin = (sH * 60) + sM;
 
                 // TOPE INTELIGENTE: Si el cálculo da algo extremo (overtime) se re-ajusta
                 if (loginTotalMin < scheduledTotalMin - 15) {
-                    const pseudoRandomOffset = (Number(agent.numero_agente) % 11) + 2; 
-                    loginTotalMin = scheduledTotalMin - pseudoRandomOffset;
+                    // SEGURO ANTI-NaN: Si el numero_agente no es numérico, usamos un offset fijo de 5.
+                    const agentNumericId = parseInt(agent.numero_agente) || 5;
+                    const pseudoRandomOffset = (agentNumericId % 11) + 2; 
                     
+                    loginTotalMin = scheduledTotalMin - pseudoRandomOffset;
                     loginH = Math.floor(loginTotalMin / 60);
                     loginM = loginTotalMin % 60;
                 }
