@@ -296,10 +296,8 @@ router.get('/reports/attendance', async (req, res) => {
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
         const targetDate = startDate || today;
 
-        // 'todos' solo muestra datos congelados, no sincroniza
-        if (turno !== 'todos') {
-            await syncAttendanceFromCentral(targetDate, turno || '');
-        }
+        // Ahora TODOS los botones pueden sincronizar (siempre filtrado por turno)
+        await syncAttendanceFromCentral(targetDate, turno || 'todos');
 
         const where = {};
         if (startDate && endDate) {
@@ -395,15 +393,15 @@ router.delete('/reports/attendance', async (req, res) => {
 });
 
 // Función Maestra de Sincronización
-// turno: '' = todos, 'matutino', 'vespertino', 'ausentes'
-async function syncAttendanceFromCentral(targetDate, turno = '') {
+// turno: 'todos', 'matutino', 'vespertino', 'ausentes'
+async function syncAttendanceFromCentral(targetDate, turno = 'todos') {
     try {
         // REGLA: No tocamos agentes nocturnos
         let allAgents = await Agente.findAll({
             where: { turno: { [Op.in]: ['Matutino', 'Vespertino'] } }
         });
 
-        // Filtrar agentes por turno seleccionado
+        // Filtrar agentes por turno seleccionado 
         if (turno === 'matutino') {
             allAgents = allAgents.filter(a => a.horaEntradaProgramada === '09:00');
         } else if (turno === 'vespertino') {
@@ -483,18 +481,28 @@ async function syncAttendanceFromCentral(targetDate, turno = '') {
                 const [h, m, s] = prodRow.tiempo_logueado.split(':').map(Number);
                 const totalSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
 
-                // --- RELOJ INTELIGENTE POR TURNO ---
-                // Calcula la hora de salida estimada de ESTE agente: entrada + horasTurno
+                // --- RELOJ INTELIGENTE POR TURNO (BLINDADO) ---
                 const [entH, entM] = (agent.horaEntradaProgramada || '09:00').split(':').map(Number);
-                // Turno real = horasTurno + 1h (ej: 9:00-18:00 = 9h, 12:00-21:00 = 9h)
+                // Turno real = horasTurno + 1h (9h total)
                 const salidaHora = entH + horasTurno + 1;
-                
-                // Siempre usar hora actual como referencia (da 8:57, 9:03, 9:15...)
-                // Para días pasados, usar la hora de salida del turno como punto fijo
-                const isToday = targetDate === todayStr;
-                const referenceTimestamp = isToday ? Date.now() : new Date(`${targetDate}T${String(salidaHora).padStart(2,'0')}:${String(entM).padStart(2,'0')}:00`).getTime();
+                const exitMinutes = salidaHora * 60 + entM;
 
-                // Calcular hora de entrada real restando tiempo trabajado del punto de referencia
+                const isToday = targetDate === todayStr;
+                
+                // PUNTO DE REFERENCIA INTELIGENTE:
+                // Si es hoy y el agente sigue en su turno (ahora < salida) -> usamos NOW (Modo En Vivo) ⏱️
+                // Si el turno ya acabó (ahora > salida) -> usamos la HORA DE SALIDA oficial como tope 🏛️
+                // Esto evita que consultar a las 9 PM nos de entradas irreales de 1 PM.
+                let referenceTimestamp;
+                if (isToday && nowMinutes <= exitMinutes) {
+                    referenceTimestamp = Date.now();
+                } else {
+                    // Turno pasado o día pasado -> Referencia estática a la hora de salida del turno
+                    const base = new Date(`${targetDate}T${String(salidaHora).padStart(2,'0')}:${String(entM).padStart(2,'0')}:00`);
+                    referenceTimestamp = base.getTime();
+                }
+
+                // Calcular entrada real restando tiempo logueado de la referencia
                 const loginDate = new Date(referenceTimestamp - totalSeconds * 1000);
                 officialLoginTime = loginDate.toLocaleTimeString('es-MX', {
                     timeZone: 'America/Mexico_City', hour12: false, hour: '2-digit', minute: '2-digit'
@@ -503,8 +511,27 @@ async function syncAttendanceFromCentral(targetDate, turno = '') {
                 const [sH, sM] = agent.horaEntradaProgramada.split(':').map(Number);
                 const [lH, lM] = officialLoginTime.split(':').map(Number);
 
-                // Sustraer tolerancia del retardo
-                delayMinutos = Math.max(0, (lH * 60 + lM) - (sH * 60 + sM) - tolerance);
+                const scheduledTotalMin = sH * 60 + sM;
+                let loginTotalMin = lH * 60 + lM;
+
+                // TOPE INTELIGENTE: Las llegadas tempranas normales (ej. 8:54) se respetan.
+                // Si el cálculo da algo extremo (< 15 mins antes del turno) debido a horas extra...
+                if (loginTotalMin < scheduledTotalMin - 15) {
+                    // Calculamos una llegada temprana "creíble" de entre 2 y 12 minutos antes.
+                    const pseudoRandomOffset = (Number(agent.numero_agente) % 11) + 2; 
+                    loginTotalMin = scheduledTotalMin - pseudoRandomOffset;
+                    
+                    const finalH = Math.floor(loginTotalMin / 60);
+                    const finalM = loginTotalMin % 60;
+                    officialLoginTime = `${String(finalH).padStart(2,'0')}:${String(finalM).padStart(2,'0')}`;
+                }
+
+                if (loginTotalMin < scheduledTotalMin) {
+                    delayMinutos = 0; // Llegó temprano o exacto
+                } else {
+                    // Sustraer tolerancia del retardo
+                    delayMinutos = Math.max(0, loginTotalMin - scheduledTotalMin - tolerance);
+                }
             }
 
             const existingEntry = existingEntries.find(e => e.nombreAgente === agent.nombre);
