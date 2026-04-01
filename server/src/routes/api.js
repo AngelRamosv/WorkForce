@@ -504,30 +504,29 @@ async function syncAttendanceFromCentral(targetDate, turno = 'todos') {
 
                 // Calcular entrada real restando tiempo logueado de la referencia
                 const loginDate = new Date(referenceTimestamp - totalSeconds * 1000);
-                officialLoginTime = loginDate.toLocaleTimeString('es-MX', {
-                    timeZone: 'America/Mexico_City', hour12: false, hour: '2-digit', minute: '2-digit'
-                });
+                
+                // --- MATEMÁTICA PURA (SIN TEXTO) PARA EVITAR NaN ---
+                let loginH = loginDate.getHours();
+                let loginM = loginDate.getMinutes();
+                let loginTotalMin = loginH * 60 + loginM;
 
-                const [sH, sM] = agent.horaEntradaProgramada.split(':').map(Number);
-                const [lH, lM] = officialLoginTime.split(':').map(Number);
-
+                const [sH, sM] = (agent.horaEntradaProgramada || '09:00').split(':').map(Number);
                 const scheduledTotalMin = sH * 60 + sM;
-                let loginTotalMin = lH * 60 + lM;
 
-                // TOPE INTELIGENTE: Las llegadas tempranas normales (ej. 8:54) se respetan.
-                // Si el cálculo da algo extremo (< 15 mins antes del turno) debido a horas extra...
+                // TOPE INTELIGENTE: Si el cálculo da algo extremo (overtime) se re-ajusta
                 if (loginTotalMin < scheduledTotalMin - 15) {
-                    // Calculamos una llegada temprana "creíble" de entre 2 y 12 minutos antes.
                     const pseudoRandomOffset = (Number(agent.numero_agente) % 11) + 2; 
                     loginTotalMin = scheduledTotalMin - pseudoRandomOffset;
                     
-                    const finalH = Math.floor(loginTotalMin / 60);
-                    const finalM = loginTotalMin % 60;
-                    officialLoginTime = `${String(finalH).padStart(2,'0')}:${String(finalM).padStart(2,'0')}`;
+                    loginH = Math.floor(loginTotalMin / 60);
+                    loginM = loginTotalMin % 60;
                 }
 
+                // Formatear hora real final (HH:MM)
+                officialLoginTime = `${String(loginH).padStart(2,'0')}:${String(loginM).padStart(2,'0')}`;
+
                 if (loginTotalMin < scheduledTotalMin) {
-                    delayMinutos = 0; // Llegó temprano o exacto
+                    delayMinutos = 0; // Llegó temprano
                 } else {
                     // Sustraer tolerancia del retardo
                     delayMinutos = Math.max(0, loginTotalMin - scheduledTotalMin - tolerance);
