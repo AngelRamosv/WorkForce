@@ -481,23 +481,23 @@ async function syncAttendanceFromCentral(targetDate, turno = 'todos') {
                 const [h, m, s] = prodRow.tiempo_logueado.split(':').map(Number);
                 const totalSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
 
-                // --- RELOJ INTELIGENTE POR TURNO (BLINDADO) ---
-                const [entH, entM] = (agent.horaEntradaProgramada || '09:00').split(':').map(Number);
+                // --- LIMPIEZA DE DATOS SUPREMA ---
+                const rawSchedule = (agent.horaEntradaProgramada || '09:00').toString();
+                // Extraer el "HH:MM" del principio (ej: de '09:00 A 18:00' saca '09:00')
+                const cleanSchedule = rawSchedule.match(/\d{1,2}:\d{2}/)?.[0] || '09:00';
+                const [entH, entM] = cleanSchedule.split(':').map(n => parseInt(n) || 0);
+                
                 // Turno real = horasTurno + 1h (9h total)
                 const salidaHora = entH + horasTurno + 1;
                 const exitMinutes = salidaHora * 60 + entM;
 
                 const isToday = targetDate === todayStr;
                 
-                // PUNTO DE REFERENCIA INTELIGENTE:
-                // Si es hoy y el agente sigue en su turno (ahora < salida) -> usamos NOW (Modo En Vivo) ⏱️
-                // Si el turno ya acabó (ahora > salida) -> usamos la HORA DE SALIDA oficial como tope 🏛️
-                // Esto evita que consultar a las 9 PM nos de entradas irreales de 1 PM.
+                // PUNTO DE REFERENCIA INTELIGENTE (LIVE / SHIFT END)
                 let referenceTimestamp;
                 if (isToday && nowMinutes <= exitMinutes) {
                     referenceTimestamp = Date.now();
                 } else {
-                    // Turno pasado o día pasado -> Referencia estática a la hora de salida del turno
                     const base = new Date(`${targetDate}T${String(salidaHora).padStart(2,'0')}:${String(entM).padStart(2,'0')}:00`);
                     referenceTimestamp = base.getTime();
                 }
@@ -506,17 +506,16 @@ async function syncAttendanceFromCentral(targetDate, turno = 'todos') {
                 const loginDate = new Date(referenceTimestamp - totalSeconds * 1000);
                 
                 // --- MATEMÁTICA PURA (SIN TEXTO) PARA EVITAR NaN ---
-                let loginH = (loginDate instanceof Date && !isNaN(loginDate)) ? loginDate.getHours() : 9;
-                let loginM = (loginDate instanceof Date && !isNaN(loginDate)) ? loginDate.getMinutes() : 0;
+                let loginH = (loginDate instanceof Date && !isNaN(loginDate)) ? loginDate.getHours() : entH;
+                let loginM = (loginDate instanceof Date && !isNaN(loginDate)) ? loginDate.getMinutes() : entM;
                 let loginTotalMin = (loginH * 60) + loginM;
 
-                const [sH, sM] = (agent.horaEntradaProgramada || '09:00').split(':').map(n => parseInt(n) || 0);
-                const scheduledTotalMin = (sH * 60) + sM;
+                const scheduledTotalMin = (entH * 60) + entM;
 
                 // TOPE INTELIGENTE: Si el cálculo da algo extremo (overtime) se re-ajusta
                 if (loginTotalMin < scheduledTotalMin - 15) {
-                    // SEGURO ANTI-NaN: Si el numero_agente no es numérico, usamos un offset fijo de 5.
-                    const agentNumericId = parseInt(agent.numero_agente) || 5;
+                    // SEGURO ANTI-NaN: Limpiar el ID para extraer solo números (ej: CCI14847 -> 14847)
+                    const agentNumericId = parseInt(agent.numero_agente.toString().replace(/\D/g, '')) || 5;
                     const pseudoRandomOffset = (agentNumericId % 11) + 2; 
                     
                     loginTotalMin = scheduledTotalMin - pseudoRandomOffset;
