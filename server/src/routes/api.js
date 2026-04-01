@@ -332,14 +332,12 @@ router.get('/reports/attendance', async (req, res) => {
 
 router.get('/reports/attendance/export', async (req, res) => {
     try {
-        const { startDate, endDate, poolId } = req.query;
+        const { startDate, endDate, poolId, turno } = req.query;
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+        const targetDate = startDate || today;
 
-        if (!startDate || startDate === today) {
-            await syncAttendanceFromCentral(today);
-        } else if (startDate === endDate) {
-            await syncAttendanceFromCentral(startDate);
-        }
+        // Asegurar que los datos del Excel estén actualizados antes de exportar
+        await syncAttendanceFromCentral(targetDate, turno || 'todos');
 
         const where = {};
         if (startDate && endDate) {
@@ -347,24 +345,33 @@ router.get('/reports/attendance/export', async (req, res) => {
         }
         if (poolId) where.campanaId = poolId;
 
+        // Filtrar por turno para el Excel
+        if (turno === 'matutino') {
+            where.horaEntradaProgramada = '09:00';
+        } else if (turno === 'vespertino') {
+            where.horaEntradaProgramada = '12:00';
+        } else if (turno === 'ausentes') {
+            where.estatusAsistencia = { [Op.in]: ['Ausente', 'Por Ingresar'] };
+        }
+
         const attendance = await Asistencia.findAll({
             where,
             order: [
                 ['fecha', 'ASC'],
-                [sequelize.literal("CASE WHEN estatusAsistencia = 'Ausente' THEN 1 ELSE 0 END"), 'ASC'],
+                [sequelize.literal("CASE WHEN estatusAsistencia = 'Ausente' THEN 1 WHEN estatusAsistencia = 'Por Ingresar' THEN 2 ELSE 0 END"), 'ASC'],
                 ['horaEntradaReal', 'ASC']
             ]
         });
 
-        const validAttendance = attendance.filter(a => a.estatusAsistencia !== 'Ausente');
-        const data = validAttendance.map(a => ({
+        const data = attendance.map(a => ({
+            'Fecha': a.fecha.split('-').reverse().join('/'),
             'Agente': a.nombreAgente,
             'Entrada Programada': a.horaEntradaProgramada,
             'Entrada Real': a.horaEntradaReal,
             'Tiempo Logueado': a.tiempoLogueado || '-',
             'Minutos Retardo': a.minutosRetardo,
             'Impacto (Llamadas)': a.impactoLlamadas > 0 ? `-${a.impactoLlamadas}` : '0',
-            'Estatus': a.estatusAsistencia === 'Retardo' ? 'RETARDO' : 'A TIEMPO'
+            'Estatus': a.estatusAsistencia
         }));
 
         const wb = xlsx.utils.book_new();

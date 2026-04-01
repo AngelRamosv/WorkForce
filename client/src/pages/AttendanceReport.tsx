@@ -58,6 +58,7 @@ const AttendanceReport: React.FC = () => {
         const params = new URLSearchParams();
         params.append('startDate', date);
         params.append('endDate', date);
+        params.append('turno', turno);
         if (poolId) params.append('poolId', poolId);
         window.open(`${api.defaults.baseURL}/reports/attendance/export?${params.toString()}`, '_blank');
     };
