@@ -190,7 +190,9 @@ router.delete('/vacations/:id', async (req, res) => {
     res.json({ success: true });
 });
 
-// --- LIVE ---
+// --- LIVE OPERATIONS ---
+let lastSyncTimestamp = 0;
+
 router.get('/live', async (req, res) => {
     try {
         let response;
@@ -205,6 +207,16 @@ router.get('/live', async (req, res) => {
         const offsetCalls = config?.ajusteLlamadas || 0;
         const offsetAbandoned = config?.ajusteAbandonadas || 0;
 
+        // Auto-sincronizar Asistencia cada 2 minutos en segundo plano
+        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+        const now = Date.now();
+        if (now - lastSyncTimestamp > 120000) { // 2 minutos
+            lastSyncTimestamp = now;
+            // No usamos await aquí para no retrasar la respuesta del dashboard, 
+            // pero refrescamos la bolsa de retardos en el fondo.
+            syncAttendanceFromCentral(today, 'todos').catch(err => console.error('Auto-Sync Error:', err.message));
+        }
+
         if (realData.llamadas_ingresadas !== undefined) {
           realData.llamadas_ingresadas = Math.max(0, realData.llamadas_ingresadas - offsetCalls);
         }
@@ -212,14 +224,24 @@ router.get('/live', async (req, res) => {
           realData.abandonadas_total = Math.max(0, realData.abandonadas_total - offsetAbandoned);
         }
 
-        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Mexico_City' });
+        // --- CORRECCIÓN DE LLAVES DE TIEMPO ---
+        // Si la central manda 'valores' pero no 'tiempos_en_estado', los mapeamos redondeando a entero.
+        if (realData.valores && !realData.tiempos_en_estado) {
+            realData.tiempos_en_estado = realData.valores.map(v => `${Math.round(v)}m`);
+        }
+
         const todayAttendance = await Asistencia.findAll({
-            where: { fecha: today, estatusAsistencia: 'Retardo' }
+            where: { 
+                fecha: today, 
+                estatusAsistencia: { [Op.in]: ['Retardo', 'Ausente'] } 
+            }
         });
 
+        const retardos = todayAttendance.filter(a => a.estatusAsistencia === 'Retardo');
+
         realData.puntualidad = {
-            totalLoginDelay: todayAttendance.reduce((sum, a) => sum + a.minutosRetardo, 0),
-            tardyEntrants: todayAttendance.map(a => ({ name: a.nombreAgente, delay: a.minutosRetardo }))
+            totalLoginDelay: retardos.reduce((sum, a) => sum + a.minutosRetardo, 0),
+            tardyEntrants: retardos.map(a => ({ name: a.nombreAgente, delay: a.minutosRetardo }))
         };
 
         res.json(realData);

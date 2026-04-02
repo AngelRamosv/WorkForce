@@ -173,11 +173,17 @@ const LiveDashboard: React.FC = () => {
         time: (data.tiempos_en_estado || [])[idx] || '0m'
     }));
 
+    const normalizeStr = (s: string) => (s || '').toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
     const tardyAgents = allAgents
-        .filter((a: any) => ['Break', 'Baño', 'Personal', 'Coaching', 'Comida', 'Capacitación', 'No Disponible', 'Consultorio', 'RetroSup', 'esperando info'].includes(a.status))
+        .filter((a: any) => {
+            const statusNorm = normalizeStr(a.status);
+            const targets = ['break', 'bano', 'personal', 'coaching', 'comida', 'capacitacion', 'no disponible', 'consultorio', 'retrosup', 'esperando info'];
+            return targets.includes(statusNorm);
+        })
         .map((a: any) => {
-            const minutes = parseInt(a.time.replace(/\D/g, '')) || 0;
-            return { ...a, minutes };
+            const minutes = parseFloat(a.time.toString().replace(/[^\d\.]/g, '')) || 0;
+            return { ...a, minutes: Math.round(minutes) };
         })
         .filter((a: any) => a.minutes > (config?.toleranciaRetardoMinutos || 5)) // Umbral dinámico: 5 minutos
         .sort((a: any, b: any) => b.minutes - a.minutes);
